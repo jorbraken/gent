@@ -1,0 +1,116 @@
+import fs from "fs";
+import path from "path";
+import os from "os";
+import yaml from "js-yaml";
+import { PROFILES_DIR, ensureGentDir } from "./config.js";
+
+export interface ProfileSettings {
+  model?: string;
+  permissionMode?: string;
+  effortLevel?: string;
+  [key: string]: unknown;
+}
+
+export interface Profile {
+  name: string;
+  extends?: string | string[];
+  description?: string;
+  mcp?: string[];
+  skills?: string[];
+  strict_mcp?: boolean;
+  settings?: ProfileSettings;
+  system_prompt_append?: string;
+}
+
+const VALID_NAME = /^[a-zA-Z0-9_-]+$/;
+
+export function validateProfileName(name: string): void {
+  if (!VALID_NAME.test(name)) {
+    throw new Error(
+      `Invalid profile name "${name}". Only letters, numbers, hyphens, and underscores are allowed.`
+    );
+  }
+}
+
+export function profilePath(name: string): string {
+  validateProfileName(name);
+  return path.join(PROFILES_DIR, `${name}.yaml`);
+}
+
+export function profileExists(name: string): boolean {
+  return fs.existsSync(profilePath(name));
+}
+
+export function mergeProfiles(profiles: Profile[]): Profile {
+  if (profiles.length === 0) throw new Error("mergeProfiles requires at least one profile");
+  if (profiles.length === 1) return profiles[0];
+
+  return profiles.reduce((a, b) => {
+    const mergedSettings = (a.settings || b.settings)
+      ? { ...(a.settings ?? {}), ...(b.settings ?? {}) }
+      : undefined;
+    const mergedPrompt = [a.system_prompt_append, b.system_prompt_append]
+      .filter(Boolean)
+      .join("\n\n") || undefined;
+
+    return {
+      name: `${a.name}+${b.name}`,
+      description: [a.description, b.description].filter(Boolean).join(" + ") || undefined,
+      mcp: [...new Set([...(a.mcp ?? []), ...(b.mcp ?? [])])],
+      skills: [...new Set([...(a.skills ?? []), ...(b.skills ?? [])])],
+      strict_mcp: (a.strict_mcp ?? false) || (b.strict_mcp ?? false) || undefined,
+      settings: mergedSettings,
+      system_prompt_append: mergedPrompt,
+    };
+  });
+}
+
+export function loadProfile(name: string, seen = new Set<string>()): Profile {
+  const p = profilePath(name);
+  if (!fs.existsSync(p)) {
+    throw new Error(`Profile "${name}" not found at ${p}`);
+  }
+  const profile = yaml.load(fs.readFileSync(p, "utf8")) as Profile;
+  profile.name = name; // filename is always authoritative
+
+  if (profile.extends) {
+    const parentNames = ([] as string[]).concat(profile.extends);
+    const nextSeen = new Set([...seen, name]);
+    for (const parentName of parentNames) {
+      if (nextSeen.has(parentName)) {
+        throw new Error(
+          `Circular extends: "${parentName}" is already in the resolution chain`
+        );
+      }
+    }
+    const parents = parentNames.map((pName) => loadProfile(pName, nextSeen));
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { extends: _ext, ...child } = profile;
+    return mergeProfiles([...parents, { ...child, name }]);
+  }
+
+  return profile;
+}
+
+export function saveProfile(profile: Profile): void {
+  ensureGentDir();
+  fs.writeFileSync(profilePath(profile.name), yaml.dump(profile), "utf8");
+}
+
+export function listProfiles(): Profile[] {
+  if (!fs.existsSync(PROFILES_DIR)) return [];
+  return fs
+    .readdirSync(PROFILES_DIR)
+    .filter((f) => f.endsWith(".yaml"))
+    .map((f) => {
+      const name = f.replace(/\.yaml$/, "");
+      return loadProfile(name);
+    });
+}
+
+export function expandHome(p: string): string {
+  if (p.startsWith("~/")) {
+    return path.join(os.homedir(), p.slice(2));
+  }
+  return p;
+}
