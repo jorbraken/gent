@@ -111,15 +111,23 @@ gent scaffold   # creates ./.gent/{config.yaml,profiles/,skills/} in the current
 
 Any `gent` command run from within that directory tree (or a subdirectory) automatically uses the project-local `.gent/`.
 
-**Inheriting from `~/.gent`** — by default `scaffold` sets `extend_global: true` in the project's `config.yaml`. With it on, the project-local `.gent/` is layered *over* your global `~/.gent/`: profiles, skills, and MCP servers defined globally remain usable from the project, and a profile can `extends:` a parent that lives only in `~/.gent`. Anything you define locally with the same name overrides the global one. Set `extend_global: false` (or remove it) to make the project fully self-contained.
+**Inheriting from other `.gent` dirs** — a `.gent` can layer *over* one or more parent `.gent` dirs via `extends`, and those parents can extend further, forming a composable hierarchy. Inherited profiles, skills, and MCP servers all become usable from the project; anything you define nearer the local end overrides an inherited one with the same name.
 
 ```yaml
 # ./.gent/config.yaml
-extend_global: true   # also read profiles/skills/MCP servers from ~/.gent
+extends:
+  - ~/.gent              # the global dir
+  - ../team-shared/.gent # a sibling repo's .gent (relative to THIS .gent dir)
+  - /opt/org/.gent       # an absolute path
+extend_global: true      # shorthand for adding ~/.gent (appended last)
 mcp_servers: {}
 ```
 
-Writes always go to the local `.gent/` — `gent profile create`, `gent mcp add`, etc. never modify `~/.gent`. Inherited MCP servers show up in `gent mcp list` tagged `(inherited)`.
+Each `extends` entry is a path to another `.gent` directory: `~` is expanded, absolute paths are used as-is, and relative paths resolve against the referencing `.gent` dir. `extend_global: true` is just shorthand for adding `~/.gent` as a parent — `scaffold` sets it by default. Remove all `extends`/`extend_global` to make a project fully self-contained.
+
+Resolution walks the chain **nearest-first** (local wins). When a dir is reached through multiple parents, its first occurrence in a left-to-right walk wins. **Circular** `extends` are rejected with a clear error; a parent path that doesn't exist is warned about and skipped.
+
+Writes always go to the local `.gent/` — `gent profile create`, `gent mcp add`, etc. never modify a parent dir. Inherited MCP servers show up in `gent mcp list` tagged `(inherited)`.
 
 ### MCP server registry (`~/.gent/config.yaml`)
 

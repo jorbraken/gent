@@ -4,7 +4,7 @@ import os from "os";
 import yaml from "js-yaml";
 import {
   PROFILES_DIR,
-  GENT_DIR_CHAIN,
+  gentDirChain,
   resolveProfilePath,
   ensureGentDir,
 } from "./config.js";
@@ -80,7 +80,7 @@ export function loadProfile(name: string, seen = new Set<string>()): Profile {
   const p = resolveProfilePath(name);
   if (!p) {
     throw new Error(
-      `Profile "${name}" not found in ${GENT_DIR_CHAIN.join(", ")}`
+      `Profile "${name}" not found in ${gentDirChain().join(", ")}`
     );
   }
   const profile = yaml.load(fs.readFileSync(p, "utf8")) as Profile;
@@ -114,7 +114,7 @@ export function listProfiles(): Profile[] {
   const seen = new Set<string>();
   const profiles: Profile[] = [];
   // Local first so a local profile shadows a global one of the same name.
-  for (const dir of GENT_DIR_CHAIN) {
+  for (const dir of gentDirChain()) {
     const dirPath = path.join(dir, "profiles");
     if (!fs.existsSync(dirPath)) continue;
     for (const f of fs.readdirSync(dirPath)) {

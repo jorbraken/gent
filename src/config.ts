@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import yaml from "js-yaml";
+import chalk from "chalk";
 
 // The shared, user-level gent dir (~/.gent). In tests GENT_HOME redirects it.
 function resolveGlobalDir(): string {
@@ -31,41 +32,113 @@ function resolveGentDir(): string {
   return resolveGlobalDir();
 }
 
-// Read just the `extend_global` opt-in from a dir's config.yaml. Done with a
-// raw read (not loadConfig) so chain resolution can't recurse into itself.
-function readsExtendGlobal(dir: string): boolean {
-  const cfgPath = path.join(dir, "config.yaml");
-  if (!fs.existsSync(cfgPath)) return false;
-  try {
-    const raw = yaml.load(fs.readFileSync(cfgPath, "utf8")) as
-      | { extend_global?: boolean }
-      | null;
-    return raw?.extend_global === true;
-  } catch {
-    return false;
-  }
-}
-
-// Ordered dirs consulted for reads (profiles, skills, MCP servers): the local
-// dir first, then ~/.gent when the local config opts in with `extend_global`.
-function resolveChain(primary: string, global: string): string[] {
-  if (primary === global) return [primary];
-  if (readsExtendGlobal(primary) && fs.existsSync(global)) {
-    return [primary, global];
-  }
-  return [primary];
-}
-
 export const GENT_DIR = resolveGentDir();
 export const GLOBAL_GENT_DIR = resolveGlobalDir();
-export const GENT_DIR_CHAIN = resolveChain(GENT_DIR, GLOBAL_GENT_DIR);
 export const CONFIG_PATH = path.join(GENT_DIR, "config.yaml");
 export const PROFILES_DIR = path.join(GENT_DIR, "profiles");
 export const SKILLS_DIR = path.join(GENT_DIR, "skills");
 
+// Expand a leading `~/` to the home directory. Kept local (not imported from
+// profiles.ts) to avoid a config <-> profiles import cycle.
+function expandHomePath(p: string): string {
+  if (p === "~") return os.homedir();
+  if (p.startsWith("~/")) return path.join(os.homedir(), p.slice(2));
+  return p;
+}
+
+// Resolve an `extends` entry (a path to another .gent dir) to an absolute path.
+// `~` is expanded, absolute paths are used as-is, and relative paths are
+// resolved against the referencing .gent dir.
+function resolveExtendPath(entry: string, baseGentDir: string): string {
+  const expanded = expandHomePath(entry);
+  return path.isAbsolute(expanded)
+    ? path.normalize(expanded)
+    : path.resolve(baseGentDir, expanded);
+}
+
+// Ordered parent .gent dirs declared by a dir's config.yaml: explicit `extends`
+// entries first (in order), then ~/.gent when `extend_global` is set. Raw read
+// (not loadConfig) so chain building can't recurse through loadConfig.
+function readParents(gentDir: string): string[] {
+  const cfgPath = path.join(gentDir, "config.yaml");
+  if (!fs.existsSync(cfgPath)) return [];
+  let raw: { extends?: string | string[]; extend_global?: boolean } | null;
+  try {
+    raw = yaml.load(fs.readFileSync(cfgPath, "utf8")) as typeof raw;
+  } catch {
+    return [];
+  }
+  if (!raw) return [];
+  const parents: string[] = [];
+  for (const entry of ([] as string[]).concat(raw.extends ?? [])) {
+    if (typeof entry === "string" && entry.trim()) {
+      parents.push(resolveExtendPath(entry.trim(), gentDir));
+    }
+  }
+  if (raw.extend_global === true) parents.push(GLOBAL_GENT_DIR);
+  return parents;
+}
+
+// Canonical key for cycle detection / de-duplication (resolves symlinks when
+// the dir exists, otherwise normalizes the path).
+function canonicalDir(dir: string): string {
+  try {
+    return fs.realpathSync(dir);
+  } catch {
+    return path.resolve(dir);
+  }
+}
+
+// Build the ordered lookup chain starting at `startDir`, following `extends`
+// recursively. Depth-first preorder (self, then parents left-to-right) with
+// first-occurrence-wins de-duplication. Throws on a circular extends; warns and
+// skips parents that don't exist.
+export function buildGentDirChain(startDir: string): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  const stack: string[] = [];
+  const stackKeys = new Set<string>();
+
+  const visit = (dir: string): void => {
+    const key = canonicalDir(dir);
+    if (stackKeys.has(key)) {
+      throw new Error(
+        `Circular .gent extends: ${[...stack, dir].join(" -> ")}`
+      );
+    }
+    if (seen.has(key)) return; // first occurrence wins
+    seen.add(key);
+    stack.push(dir);
+    stackKeys.add(key);
+    result.push(dir);
+    for (const parent of readParents(dir)) {
+      if (fs.existsSync(parent)) {
+        visit(parent);
+      } else {
+        console.warn(
+          chalk.yellow(`Warning: extends target "${parent}" does not exist — skipping`)
+        );
+      }
+    }
+    stack.pop();
+    stackKeys.delete(key);
+  };
+
+  visit(startDir);
+  return result;
+}
+
+// Lazily-built, memoized lookup chain for the active GENT_DIR. Lazy so the
+// (potentially throwing) build runs inside a CLI action — caught by the
+// top-level handler in cli.ts — rather than at module import.
+let _chain: string[] | null = null;
+export function gentDirChain(): string[] {
+  return (_chain ??= buildGentDirChain(GENT_DIR));
+}
+
 // First existing match for a profile across the lookup chain (local wins).
 export function resolveProfilePath(name: string): string | null {
-  for (const dir of GENT_DIR_CHAIN) {
+  for (const dir of gentDirChain()) {
     const p = path.join(dir, "profiles", `${name}.yaml`);
     if (fs.existsSync(p)) return p;
   }
@@ -75,7 +148,7 @@ export function resolveProfilePath(name: string): string | null {
 // Resolve a skill directory across the chain; falls back to the local path so
 // callers still get a sensible (if missing) path to report.
 export function resolveSkillPath(name: string): string {
-  for (const dir of GENT_DIR_CHAIN) {
+  for (const dir of gentDirChain()) {
     const p = path.join(dir, "skills", name);
     if (fs.existsSync(p)) return p;
   }
@@ -105,8 +178,11 @@ export interface McpServerConfig {
 
 export interface GentConfig {
   mcp_servers: Record<string, McpServerConfig>;
-  // When true on a project-local config, gent also reads profiles, skills, and
-  // MCP servers from ~/.gent (local entries override on name conflicts).
+  // Parent .gent directories to inherit profiles, skills, and MCP servers from.
+  // Each entry is a path to another .gent dir (`~` expanded, relative paths
+  // resolved against this .gent dir). Parents may themselves declare `extends`.
+  extends?: string | string[];
+  // Shorthand for adding ~/.gent as a parent (appended after `extends`).
   extend_global?: boolean;
 }
 
@@ -122,7 +198,7 @@ export function ensureGentDir(): void {
 
 export function listSkills(): string[] {
   const names = new Set<string>();
-  for (const dir of GENT_DIR_CHAIN) {
+  for (const dir of gentDirChain()) {
     const skillsDir = path.join(dir, "skills");
     if (!fs.existsSync(skillsDir)) continue;
     for (const e of fs.readdirSync(skillsDir, { withFileTypes: true })) {
@@ -149,12 +225,12 @@ export function loadLocalConfig(): GentConfig {
   return { ...raw, mcp_servers: { ...(raw.mcp_servers ?? {}) } };
 }
 
-// The effective config used at runtime: ~/.gent merged underneath the local
-// config when `extend_global` is set. Local servers win on name conflicts.
+// The effective config used at runtime: inherited .gent dirs merged underneath
+// the local config along the extends chain. Local servers win on name conflicts.
 export function loadConfig(): GentConfig {
   const mcp_servers: Record<string, McpServerConfig> = {};
-  // Walk global → local so local entries overwrite inherited ones.
-  for (const dir of [...GENT_DIR_CHAIN].reverse()) {
+  // Walk farthest → nearest so nearer entries overwrite inherited ones.
+  for (const dir of [...gentDirChain()].reverse()) {
     const raw = readConfigFile(path.join(dir, "config.yaml"));
     if (raw?.mcp_servers) Object.assign(mcp_servers, raw.mcp_servers);
   }
