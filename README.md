@@ -111,6 +111,16 @@ gent scaffold   # creates ./.gent/{config.yaml,profiles/,skills/} in the current
 
 Any `gent` command run from within that directory tree (or a subdirectory) automatically uses the project-local `.gent/`.
 
+**Inheriting from `~/.gent`** — by default `scaffold` sets `extend_global: true` in the project's `config.yaml`. With it on, the project-local `.gent/` is layered *over* your global `~/.gent/`: profiles, skills, and MCP servers defined globally remain usable from the project, and a profile can `extends:` a parent that lives only in `~/.gent`. Anything you define locally with the same name overrides the global one. Set `extend_global: false` (or remove it) to make the project fully self-contained.
+
+```yaml
+# ./.gent/config.yaml
+extend_global: true   # also read profiles/skills/MCP servers from ~/.gent
+mcp_servers: {}
+```
+
+Writes always go to the local `.gent/` — `gent profile create`, `gent mcp add`, etc. never modify `~/.gent`. Inherited MCP servers show up in `gent mcp list` tagged `(inherited)`.
+
 ### MCP server registry (`~/.gent/config.yaml`)
 
 Define the full catalog of available servers once. Profile `env` values support `${VAR}` interpolation from your shell environment.

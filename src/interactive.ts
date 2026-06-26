@@ -1,7 +1,7 @@
 import { confirm, input, select } from "@inquirer/prompts";
 import chalk from "chalk";
 import { listProfiles, mergeProfiles, type Profile } from "./profiles.js";
-import { listSkills } from "./config.js";
+import { listSkills, displayGentDir } from "./config.js";
 import { AGENT_NAMES, getAdapter, type AgentName } from "./agents.js";
 
 async function pickAgent(current: AgentName): Promise<AgentName> {
@@ -52,7 +52,7 @@ async function pickSkills(preSelected: string[]): Promise<string[]> {
   if (available.length === 0) {
     if (preSelected.length === 0) {
       console.log(
-        chalk.gray("  No skills found. Add skill directories to ~/.gent/skills/<name>/")
+        chalk.gray(`  No skills found. Add skill directories to ${displayGentDir()}/skills/<name>/`)
       );
     }
     return preSelected;
@@ -93,7 +93,7 @@ async function customizeProfile(profile: Profile): Promise<Profile> {
 export async function initWizard(): Promise<void> {
   console.log(chalk.bold("\nWelcome to gent!\n"));
   console.log(
-    "This wizard will set up your ~/.gent directory with an initial config.\n"
+    `This wizard will set up ${displayGentDir()} with an initial config.\n`
   );
 
   const { saveConfig, loadConfig, ensureGentDir, configExists } = await import(
@@ -106,7 +106,7 @@ export async function initWizard(): Promise<void> {
   if (configExists()) {
     const overwrite = await confirm({
       message:
-        "~/.gent/config.yaml already exists. Continue and add to it?",
+        `${displayGentDir()}/config.yaml already exists. Continue and add to it?`,
       default: true,
     });
     if (!overwrite) return;
@@ -145,7 +145,7 @@ export async function initWizard(): Promise<void> {
 export async function addMcpServerWizard(
   registry: Record<string, unknown>
 ): Promise<void> {
-  const { saveConfig, loadConfig } = await import("./config.js");
+  const { saveConfig, loadLocalConfig: loadConfig } = await import("./config.js");
 
   const name = await input({ message: "Server name (e.g. github):" });
   const type = await select({
@@ -192,11 +192,13 @@ export async function addMcpServerWizard(
 }
 
 export async function editMcpServerWizard(name: string): Promise<void> {
-  const { saveConfig, loadConfig } = await import("./config.js");
+  const { saveConfig, loadConfig, loadLocalConfig } = await import("./config.js");
 
-  const config = loadConfig();
-  const existing = config.mcp_servers[name];
+  // Prefill from the effective (possibly inherited) definition, but write the
+  // result into the project-local config so we never copy ~/.gent wholesale.
+  const existing = loadConfig().mcp_servers[name];
   if (!existing) throw new Error(`MCP server "${name}" not found.`);
+  const config = loadLocalConfig();
 
   const type = await select({
     message: "Type:",

@@ -14,8 +14,11 @@ import {
 } from "./profiles.js";
 import {
   loadConfig,
+  loadLocalConfig,
   saveConfig,
   ensureGentDir,
+  displayGentDir,
+  GLOBAL_GENT_DIR,
   CONFIG_PATH,
   PROFILES_DIR,
 } from "./config.js";
@@ -117,12 +120,17 @@ program
     fs.mkdirSync(path.join(localDir, "skills"), { recursive: true });
     fs.writeFileSync(
       path.join(localDir, "config.yaml"),
-      yaml.dump({ mcp_servers: {} }),
+      yaml.dump({ mcp_servers: {}, extend_global: true }),
       "utf8"
     );
     console.log(chalk.green(`Created .gent/ in ${process.cwd()}`));
     console.log(chalk.gray("  Run `gent profile create` to add your first profile."));
     console.log(chalk.gray("  gent will use this .gent/ automatically when run from this directory."));
+    console.log(
+      chalk.gray(
+        "  extend_global: true is set, so it also inherits profiles, skills, and MCP servers from ~/.gent."
+      )
+    );
   });
 
 // gent profile
@@ -231,12 +239,14 @@ mcpCmd
       console.log(chalk.yellow("No MCP servers registered. Run `gent mcp add`."));
       return;
     }
+    const localNames = new Set(Object.keys(loadLocalConfig().mcp_servers));
     for (const [name, def] of servers) {
       const detail =
         def.type === "stdio"
           ? chalk.gray(`${def.command} ${(def.args ?? []).join(" ")}`)
           : chalk.gray(def.url ?? "");
-      console.log(`  ${chalk.bold(name)} ${chalk.cyan(`[${def.type}]`)} ${detail}`);
+      const inherited = localNames.has(name) ? "" : chalk.gray(" (inherited)");
+      console.log(`  ${chalk.bold(name)} ${chalk.cyan(`[${def.type}]`)} ${detail}${inherited}`);
     }
   });
 
@@ -265,9 +275,17 @@ mcpCmd
   .command("remove <name>")
   .description("Remove an MCP server from the registry")
   .action(async (name: string) => {
-    const config = loadConfig();
+    const config = loadLocalConfig();
     if (!config.mcp_servers[name]) {
-      console.error(chalk.red(`MCP server "${name}" not found.`));
+      if (loadConfig().mcp_servers[name]) {
+        console.error(
+          chalk.red(
+            `MCP server "${name}" is inherited from ${displayGentDir(GLOBAL_GENT_DIR)} — remove it there.`
+          )
+        );
+      } else {
+        console.error(chalk.red(`MCP server "${name}" not found.`));
+      }
       process.exit(1);
     }
     const { confirm } = await import("@inquirer/prompts");

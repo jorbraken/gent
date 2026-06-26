@@ -2,7 +2,12 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import yaml from "js-yaml";
-import { PROFILES_DIR, ensureGentDir } from "./config.js";
+import {
+  PROFILES_DIR,
+  GENT_DIR_CHAIN,
+  resolveProfilePath,
+  ensureGentDir,
+} from "./config.js";
 import { type AgentName } from "./agents.js";
 
 export interface ProfileSettings {
@@ -34,13 +39,15 @@ export function validateProfileName(name: string): void {
   }
 }
 
+// Write path for a profile — always the project-local profiles dir.
 export function profilePath(name: string): string {
   validateProfileName(name);
   return path.join(PROFILES_DIR, `${name}.yaml`);
 }
 
 export function profileExists(name: string): boolean {
-  return fs.existsSync(profilePath(name));
+  validateProfileName(name);
+  return resolveProfilePath(name) !== null;
 }
 
 export function mergeProfiles(profiles: Profile[]): Profile {
@@ -69,9 +76,12 @@ export function mergeProfiles(profiles: Profile[]): Profile {
 }
 
 export function loadProfile(name: string, seen = new Set<string>()): Profile {
-  const p = profilePath(name);
-  if (!fs.existsSync(p)) {
-    throw new Error(`Profile "${name}" not found at ${p}`);
+  validateProfileName(name);
+  const p = resolveProfilePath(name);
+  if (!p) {
+    throw new Error(
+      `Profile "${name}" not found in ${GENT_DIR_CHAIN.join(", ")}`
+    );
   }
   const profile = yaml.load(fs.readFileSync(p, "utf8")) as Profile;
   profile.name = name; // filename is always authoritative
@@ -101,14 +111,21 @@ export function saveProfile(profile: Profile): void {
 }
 
 export function listProfiles(): Profile[] {
-  if (!fs.existsSync(PROFILES_DIR)) return [];
-  return fs
-    .readdirSync(PROFILES_DIR)
-    .filter((f) => f.endsWith(".yaml"))
-    .map((f) => {
+  const seen = new Set<string>();
+  const profiles: Profile[] = [];
+  // Local first so a local profile shadows a global one of the same name.
+  for (const dir of GENT_DIR_CHAIN) {
+    const dirPath = path.join(dir, "profiles");
+    if (!fs.existsSync(dirPath)) continue;
+    for (const f of fs.readdirSync(dirPath)) {
+      if (!f.endsWith(".yaml")) continue;
       const name = f.replace(/\.yaml$/, "");
-      return loadProfile(name);
-    });
+      if (seen.has(name)) continue;
+      seen.add(name);
+      profiles.push(loadProfile(name));
+    }
+  }
+  return profiles;
 }
 
 export function expandHome(p: string): string {

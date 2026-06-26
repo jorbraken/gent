@@ -3,7 +3,7 @@ import path from "path";
 import chalk from "chalk";
 import {
   resolveEnv,
-  SKILLS_DIR,
+  resolveSkillPath,
   type GentConfig,
   type McpServerConfig,
 } from "./config.js";
@@ -94,7 +94,7 @@ function classifySkills(skills: string[]): {
   const bundles: string[] = [];
   const individuals: string[] = [];
   for (const name of skills) {
-    const p = path.join(SKILLS_DIR, name);
+    const p = resolveSkillPath(name);
     if (fs.existsSync(path.join(p, "skills"))) {
       bundles.push(name);
     } else {
@@ -185,7 +185,7 @@ const claudeAdapter: AgentAdapter = {
 
     const { bundles, individuals } = classifySkills(profile.skills ?? []);
     for (const name of bundles) {
-      args.push("--plugin-dir", path.join(SKILLS_DIR, name));
+      args.push("--plugin-dir", resolveSkillPath(name));
     }
     if (individuals.length > 0) {
       if (tmpDir === null) {
@@ -194,7 +194,7 @@ const claudeAdapter: AgentAdapter = {
         const pluginSkillsDir = path.join(tmpDir, "skills-plugin", "skills");
         fs.mkdirSync(pluginSkillsDir, { recursive: true });
         for (const name of individuals) {
-          fs.symlinkSync(path.join(SKILLS_DIR, name), path.join(pluginSkillsDir, name));
+          fs.symlinkSync(resolveSkillPath(name), path.join(pluginSkillsDir, name));
         }
         args.push("--plugin-dir", path.join(tmpDir, "skills-plugin"));
       }
@@ -271,7 +271,7 @@ const piAdapter: AgentAdapter = {
 
     // pi loads a skill directory directly — no plugin aggregation needed.
     for (const name of profile.skills ?? []) {
-      args.push("--skill", path.join(SKILLS_DIR, name));
+      args.push("--skill", resolveSkillPath(name));
     }
 
     return args;
