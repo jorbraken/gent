@@ -1,5 +1,7 @@
 # gent
 
+![gent](assets/gent.png)
+
 Claude Code environment profile manager. Instead of loading every MCP server and skill on every session, `gent` lets you define named profiles that each activate only the tools relevant to your current task — then launches `claude` with the right flags pre-composed.
 
 ```bash
