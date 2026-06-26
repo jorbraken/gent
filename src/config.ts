@@ -3,10 +3,22 @@ import path from "path";
 import os from "os";
 import yaml from "js-yaml";
 
-const home =
-  (process.env.NODE_ENV === "test" ? process.env.GENT_HOME : undefined) ??
-  os.homedir();
-export const GENT_DIR = path.join(home, ".gent");
+function resolveGentDir(): string {
+  if (process.env.NODE_ENV === "test" && process.env.GENT_HOME) {
+    return path.join(process.env.GENT_HOME, ".gent");
+  }
+  let dir = process.cwd();
+  while (true) {
+    const candidate = path.join(dir, ".gent");
+    if (fs.existsSync(candidate)) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return path.join(os.homedir(), ".gent");
+}
+
+export const GENT_DIR = resolveGentDir();
 export const CONFIG_PATH = path.join(GENT_DIR, "config.yaml");
 export const PROFILES_DIR = path.join(GENT_DIR, "profiles");
 export const SKILLS_DIR = path.join(GENT_DIR, "skills");

@@ -1,5 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
+import fs from "fs";
+import yaml from "js-yaml";
 import { run } from "./runner.js";
 import {
   listProfiles,
@@ -78,6 +80,28 @@ program
   .description("Interactive first-time setup")
   .action(async () => {
     await initWizard();
+  });
+
+// gent scaffold
+program
+  .command("scaffold")
+  .description("Create a project-local .gent/ folder in the current directory")
+  .action(() => {
+    const localDir = path.join(process.cwd(), ".gent");
+    if (fs.existsSync(localDir)) {
+      console.log(chalk.yellow(`.gent/ already exists at ${localDir}`));
+      return;
+    }
+    fs.mkdirSync(path.join(localDir, "profiles"), { recursive: true });
+    fs.mkdirSync(path.join(localDir, "skills"), { recursive: true });
+    fs.writeFileSync(
+      path.join(localDir, "config.yaml"),
+      yaml.dump({ mcp_servers: {} }),
+      "utf8"
+    );
+    console.log(chalk.green(`Created .gent/ in ${process.cwd()}`));
+    console.log(chalk.gray("  Run `gent profile create` to add your first profile."));
+    console.log(chalk.gray("  gent will use this .gent/ automatically when run from this directory."));
   });
 
 // gent profile
