@@ -164,6 +164,22 @@ export async function addMcpServerWizard(
   console.log(chalk.green(`MCP server "${name}" added.`));
 }
 
+const EFFORT_LEVELS = [
+  { value: "", name: "Default (use claude's default)" },
+  { value: "low", name: "Low — minimal thinking, fastest" },
+  { value: "medium", name: "Medium — balanced thinking" },
+  { value: "high", name: "High — maximum thinking, slowest" },
+];
+
+const CLAUDE_MODELS = [
+  { value: "", name: "Default (use claude's default)" },
+  { value: "claude-fable-5", name: "Fable 5 — most capable" },
+  { value: "claude-opus-4-8", name: "Opus 4.8 — most capable (Claude 4 family)" },
+  { value: "claude-sonnet-4-6", name: "Sonnet 4.6 — balanced" },
+  { value: "claude-haiku-4-5-20251001", name: "Haiku 4.5 — fastest / cheapest" },
+  { value: "__custom__", name: "Custom model ID..." },
+];
+
 export async function profileWizard(
   mcpRegistry: Record<string, unknown>
 ): Promise<Profile> {
@@ -198,9 +214,24 @@ export async function profileWizard(
     .map((s) => s.trim())
     .filter(Boolean);
 
-  const model = await input({
-    message: "Model (leave blank for default):",
+  const modelChoice = await select({
+    message: "Model:",
+    choices: CLAUDE_MODELS,
   });
+  const model =
+    modelChoice === "__custom__"
+      ? await input({ message: "Enter model ID:" })
+      : modelChoice;
+
+  const effortLevel = await select({
+    message: "Effort level:",
+    choices: EFFORT_LEVELS,
+  });
+
+  const settings = {
+    ...(model ? { model } : {}),
+    ...(effortLevel ? { effortLevel } : {}),
+  };
 
   const profile: Profile = {
     name,
@@ -208,7 +239,7 @@ export async function profileWizard(
     ...(mcp.length ? { mcp } : {}),
     ...(skills.length ? { skills } : {}),
     ...(strictMcp ? { strict_mcp: true } : {}),
-    ...(model ? { settings: { model } } : {}),
+    ...(Object.keys(settings).length ? { settings } : {}),
   };
 
   return profile;
