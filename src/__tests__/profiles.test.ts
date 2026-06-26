@@ -137,6 +137,20 @@ describe("mergeProfiles", () => {
     const { mergeProfiles } = await fresh();
     expect(() => mergeProfiles([])).toThrow(/at least one/);
   });
+
+  it("takes agent from the last profile that defines it", async () => {
+    const { mergeProfiles } = await fresh();
+    const a = { name: "dev", agent: "claude" as const };
+    const b = { name: "qa", agent: "pi" as const };
+    expect(mergeProfiles([a, b]).agent).toBe("pi");
+  });
+
+  it("inherits agent from an earlier profile when later omits it", async () => {
+    const { mergeProfiles } = await fresh();
+    const a = { name: "dev", agent: "pi" as const };
+    const b = { name: "qa" };
+    expect(mergeProfiles([a, b]).agent).toBe("pi");
+  });
 });
 
 // ─── loadProfile ─────────────────────────────────────────────────────────────

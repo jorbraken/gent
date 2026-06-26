@@ -3,6 +3,7 @@ import chalk from "chalk";
 import fs from "fs";
 import yaml from "js-yaml";
 import { run } from "./runner.js";
+import { AGENT_NAMES, isAgentName } from "./agents.js";
 import {
   listProfiles,
   loadProfile,
@@ -32,14 +33,30 @@ const program = new Command();
 
 program
   .name("gent")
-  .description("Claude Code environment profile manager")
+  .description("Coding-agent environment profile manager for Claude Code and Pi")
   .version("0.1.0")
   .argument("[profile]", "profile name(s) to activate — comma-separate to compose (e.g. dev,qa)")
-  .option("--dry-run", "print the composed claude command without running it")
+  .option("--dry-run", "print the composed agent command without running it")
+  .option("--agent <name>", `agent to run: ${AGENT_NAMES.join(" or ")} (overrides the profile)`)
   .allowUnknownOption()
-  .action(async (profileArg: string | undefined, options: { dryRun?: boolean }) => {
+  .action(async (profileArg: string | undefined, options: { dryRun?: boolean; agent?: string }) => {
     const rawArgs = program.args.slice(profileArg ? 1 : 0);
-    const extraArgs = rawArgs.filter((a) => a !== "--dry-run");
+    const extraArgs: string[] = [];
+    for (let i = 0; i < rawArgs.length; i++) {
+      if (rawArgs[i] === "--dry-run") continue;
+      if (rawArgs[i] === "--agent") {
+        i++; // skip the value too
+        continue;
+      }
+      extraArgs.push(rawArgs[i]);
+    }
+
+    if (options.agent && !isAgentName(options.agent)) {
+      console.error(
+        chalk.red(`Unknown agent "${options.agent}". Valid agents: ${AGENT_NAMES.join(", ")}.`)
+      );
+      process.exit(1);
+    }
 
     let profile: Profile;
     if (!profileArg) {
@@ -50,6 +67,10 @@ program
         names.length === 1
           ? loadProfile(names[0])
           : mergeProfiles(names.map((n) => loadProfile(n)));
+    }
+
+    if (options.agent && isAgentName(options.agent)) {
+      profile = { ...profile, agent: options.agent };
     }
 
     run(profile, extraArgs, options.dryRun ?? false);
@@ -120,6 +141,7 @@ profileCmd
       console.log(`  ${chalk.gray(label.padEnd(12))} ${value}`);
     console.log();
     row("name", chalk.bold(p.name));
+    row("agent", p.agent ?? "claude");
     if (p.description) row("description", p.description);
     if (p.extends) {
       const parents = ([] as string[]).concat(p.extends).join(", ");

@@ -3,6 +3,7 @@ import path from "path";
 import os from "os";
 import yaml from "js-yaml";
 import { PROFILES_DIR, ensureGentDir } from "./config.js";
+import { type AgentName } from "./agents.js";
 
 export interface ProfileSettings {
   model?: string;
@@ -13,6 +14,7 @@ export interface ProfileSettings {
 
 export interface Profile {
   name: string;
+  agent?: AgentName;
   extends?: string | string[];
   description?: string;
   mcp?: string[];
@@ -55,6 +57,7 @@ export function mergeProfiles(profiles: Profile[]): Profile {
 
     return {
       name: `${a.name}+${b.name}`,
+      agent: b.agent ?? a.agent,
       description: [a.description, b.description].filter(Boolean).join(" + ") || undefined,
       mcp: [...new Set([...(a.mcp ?? []), ...(b.mcp ?? [])])],
       skills: [...new Set([...(a.skills ?? []), ...(b.skills ?? [])])],

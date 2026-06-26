@@ -2,6 +2,15 @@ import { confirm, input, select } from "@inquirer/prompts";
 import chalk from "chalk";
 import { listProfiles, mergeProfiles, type Profile } from "./profiles.js";
 import { listSkills } from "./config.js";
+import { AGENT_NAMES, getAdapter, type AgentName } from "./agents.js";
+
+async function pickAgent(current: AgentName): Promise<AgentName> {
+  return select<AgentName>({
+    message: "Agent:",
+    choices: AGENT_NAMES.map((a) => ({ name: a, value: a })),
+    default: current,
+  });
+}
 
 export async function pickProfile(): Promise<Profile> {
   const profiles = listProfiles();
@@ -263,22 +272,6 @@ export async function editMcpServerWizard(name: string): Promise<void> {
   console.log(chalk.green(`MCP server "${name}" updated.`));
 }
 
-const EFFORT_LEVELS = [
-  { value: "", name: "Default (use claude's default)" },
-  { value: "low", name: "Low — minimal thinking, fastest" },
-  { value: "medium", name: "Medium — balanced thinking" },
-  { value: "high", name: "High — maximum thinking, slowest" },
-];
-
-const CLAUDE_MODELS = [
-  { value: "", name: "Default (use claude's default)" },
-  { value: "claude-fable-5", name: "Fable 5 — most capable" },
-  { value: "claude-opus-4-8", name: "Opus 4.8 — most capable (Claude 4 family)" },
-  { value: "claude-sonnet-4-6", name: "Sonnet 4.6 — balanced" },
-  { value: "claude-haiku-4-5-20251001", name: "Haiku 4.5 — fastest / cheapest" },
-  { value: "__custom__", name: "Custom model ID..." },
-];
-
 export async function editProfileWizard(name: string): Promise<void> {
   const { saveProfile, loadProfile, profilePath } = await import("./profiles.js");
   const { loadConfig } = await import("./config.js");
@@ -288,14 +281,16 @@ export async function editProfileWizard(name: string): Promise<void> {
   const config = loadConfig();
 
   const newName = await input({ message: "Profile name:", default: existing.name });
+  const agent = await pickAgent(existing.agent ?? "claude");
+  const adapter = getAdapter(agent);
   const description = await input({
     message: "Description (optional):",
     default: existing.description ?? "",
   });
 
   const serverNames = Object.keys(config.mcp_servers);
-  let mcp: string[] = existing.mcp ?? [];
-  if (serverNames.length > 0) {
+  let mcp: string[] = adapter.supportsMcp ? existing.mcp ?? [] : [];
+  if (adapter.supportsMcp && serverNames.length > 0) {
     mcp = await checkbox({
       message: "Which MCP servers to include?",
       choices: serverNames.map((s) => ({
@@ -307,7 +302,7 @@ export async function editProfileWizard(name: string): Promise<void> {
   }
 
   const strictMcp =
-    mcp.length > 0
+    adapter.supportsMcp && mcp.length > 0
       ? await confirm({
           message: "Use --strict-mcp-config (block global MCP from loading)?",
           default: existing.strict_mcp ?? true,
@@ -317,10 +312,10 @@ export async function editProfileWizard(name: string): Promise<void> {
   const skills = await pickSkills(existing.skills ?? []);
 
   const existingModel = existing.settings?.model ?? "";
-  const isKnownModel = CLAUDE_MODELS.some((m) => m.value === existingModel);
+  const isKnownModel = adapter.wizardModels.some((m) => m.value === existingModel);
   const modelChoice = await select({
     message: "Model:",
-    choices: CLAUDE_MODELS,
+    choices: adapter.wizardModels,
     default: isKnownModel ? existingModel : "__custom__",
   });
   const model =
@@ -329,8 +324,8 @@ export async function editProfileWizard(name: string): Promise<void> {
       : modelChoice;
 
   const effortLevel = await select({
-    message: "Effort level:",
-    choices: EFFORT_LEVELS,
+    message: adapter.thinkingPromptLabel,
+    choices: adapter.wizardThinking,
     default: existing.settings?.effortLevel ?? "",
   });
 
@@ -356,6 +351,7 @@ export async function editProfileWizard(name: string): Promise<void> {
   const updated: Profile = {
     ...existing,
     name: newName,
+    ...(agent === "claude" ? { agent: undefined } : { agent }),
     ...(description ? { description } : { description: undefined }),
     ...(mcp.length ? { mcp } : { mcp: undefined }),
     ...(skills.length ? { skills } : { skills: undefined }),
@@ -377,11 +373,13 @@ export async function profileWizard(
   mcpRegistry: Record<string, unknown>
 ): Promise<Profile> {
   const name = await input({ message: "Profile name (e.g. product):" });
+  const agent = await pickAgent("claude");
+  const adapter = getAdapter(agent);
   const description = await input({
     message: "Description (optional):",
   });
 
-  const serverNames = Object.keys(mcpRegistry);
+  const serverNames = adapter.supportsMcp ? Object.keys(mcpRegistry) : [];
   let mcp: string[] = [];
   if (serverNames.length > 0) {
     const { checkbox } = await import("@inquirer/prompts");
@@ -403,7 +401,7 @@ export async function profileWizard(
 
   const modelChoice = await select({
     message: "Model:",
-    choices: CLAUDE_MODELS,
+    choices: adapter.wizardModels,
   });
   const model =
     modelChoice === "__custom__"
@@ -411,8 +409,8 @@ export async function profileWizard(
       : modelChoice;
 
   const effortLevel = await select({
-    message: "Effort level:",
-    choices: EFFORT_LEVELS,
+    message: adapter.thinkingPromptLabel,
+    choices: adapter.wizardThinking,
   });
 
   const { editor } = await import("@inquirer/prompts");
@@ -428,6 +426,7 @@ export async function profileWizard(
 
   const profile: Profile = {
     name,
+    ...(agent === "claude" ? {} : { agent }),
     ...(description ? { description } : {}),
     ...(mcp.length ? { mcp } : {}),
     ...(skills.length ? { skills } : {}),

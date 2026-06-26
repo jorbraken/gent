@@ -2,7 +2,9 @@
 
 ![gent](assets/gent.png)
 
-Claude Code environment profile manager. Instead of loading every MCP server and skill on every session, `gent` helps you define named profiles that each activate only the tools relevant to your current task — then launches `claude` with the right flags pre-composed.
+Coding-agent environment profile manager. Instead of loading every MCP server and skill on every session, `gent` helps you define named profiles that each activate only the tools relevant to your current task — then launches your agent with the right flags pre-composed.
+
+It supports two agents: [Claude Code](https://claude.ai/code) (`claude`, the default) and [Pi](https://github.com/earendil-works/pi) (`pi`). A profile targets one of them via its `agent:` field, or you can override per-run with `--agent`.
 
 ```bash
 gent dev           # launch claude with GitHub + fetch + memory, permissionMode: auto
@@ -34,11 +36,14 @@ gent list
 # Run a profile
 gent <profile>
 
-# Preview the composed claude command without running it
+# Preview the composed agent command without running it
 gent <profile> --dry-run
 
-# Pass extra flags through to claude
+# Pass extra flags through to the agent
 gent dev -- -p "fix the failing tests"
+
+# Run a profile against pi instead of claude (overrides the profile's agent)
+gent dev --agent pi --dry-run
 ```
 
 ## Composing profiles
@@ -129,6 +134,7 @@ mcp_servers:
 
 ```yaml
 name: dev                  # optional — filename always wins
+agent: claude              # optional: claude (default) or pi
 extends: base              # optional: inherit from one or more parent profiles
 description: Implementation — coding, code review, debugging
 mcp:
@@ -148,6 +154,21 @@ system_prompt_append: |
 
 The filename (`dev.yaml`) is always the profile name — the `name` field inside the YAML is ignored.
 
+### Agents (claude vs pi)
+
+A profile runs against `claude` by default. Set `agent: pi` (or pass `--agent pi`) to target Pi instead. `gent` translates the overlapping profile features into each agent's flags:
+
+| Profile feature | claude | pi |
+|---|---|---|
+| `settings.model` | `--settings {model}` | `--model` |
+| `settings.effortLevel` | `--settings {effortLevel}` | `--thinking` |
+| `system_prompt_append` | `--append-system-prompt-file` | `--append-system-prompt` |
+| `skills` | `--plugin-dir` | `--skill` |
+| `mcp` / `strict_mcp` | `--mcp-config` / `--strict-mcp-config` | *not supported — ignored with a warning* |
+| `settings.permissionMode` and other keys | `--settings` | *not supported — ignored with a warning* |
+
+Pi has no MCP support, so when a `pi` profile lists MCP servers (or other unsupported settings) `gent` prints a yellow warning and skips them. The `gent profile create/edit` wizard is agent-aware: pick the agent up front and it offers the right model/thinking choices and hides the MCP prompts for `pi`.
+
 ### Skills
 
 Each entry under `skills:` references a directory inside `<gent-dir>/skills/`. `gent` loads them via `claude --plugin-dir`:
@@ -157,7 +178,7 @@ Each entry under `skills:` references a directory inside `<gent-dir>/skills/`. `
 
 ### Security
 
-`gent` never passes MCP config, settings, or the system-prompt append as inline command-line arguments — those would be visible to any user via `ps`. Instead it writes them to temp files with mode `0600` and passes the file paths (`--mcp-config`, `--settings`, `--append-system-prompt-file`). The temp directory is removed when `claude` exits.
+`gent` never passes MCP config, settings, or the system-prompt append as inline command-line arguments — those would be visible to any user via `ps`. Instead it writes them to temp files with mode `0600` and passes the file paths (for claude: `--mcp-config`, `--settings`, `--append-system-prompt-file`; for pi: `--append-system-prompt` with a file path). The temp directory is removed when the agent exits.
 
 ## Built-in SDLC profiles
 
