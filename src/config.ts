@@ -58,8 +58,9 @@ function resolveExtendPath(entry: string, baseGentDir: string): string {
 
 // Ordered parent .gent dirs declared by a dir's config.yaml: explicit `extends`
 // entries first (in order), then ~/.gent when `extend_global` is set. Raw read
-// (not loadConfig) so chain building can't recurse through loadConfig.
-function readParents(gentDir: string): string[] {
+// (not loadConfig) so chain building can't recurse through loadConfig. Returns
+// resolved absolute paths.
+export function parentDirs(gentDir: string): string[] {
   const cfgPath = path.join(gentDir, "config.yaml");
   if (!fs.existsSync(cfgPath)) return [];
   let raw: { extends?: string | string[]; extend_global?: boolean } | null;
@@ -111,7 +112,7 @@ export function buildGentDirChain(startDir: string): string[] {
     stack.push(dir);
     stackKeys.add(key);
     result.push(dir);
-    for (const parent of readParents(dir)) {
+    for (const parent of parentDirs(dir)) {
       if (fs.existsSync(parent)) {
         visit(parent);
       } else {

@@ -18,10 +18,12 @@ import {
   saveConfig,
   ensureGentDir,
   displayGentDir,
+  parentDirs,
   GLOBAL_GENT_DIR,
   CONFIG_PATH,
   PROFILES_DIR,
 } from "./config.js";
+import { registerScaffold, listScaffolds } from "./scaffolds.js";
 import {
   pickProfile,
   initWizard,
@@ -107,13 +109,14 @@ program
   });
 
 // gent scaffold
-program
+const scaffoldCmd = program
   .command("scaffold")
   .description("Create a project-local .gent/ folder in the current directory")
   .action(() => {
     const localDir = path.join(process.cwd(), ".gent");
     if (fs.existsSync(localDir)) {
       console.log(chalk.yellow(`.gent/ already exists at ${localDir}`));
+      registerScaffold(localDir); // ensure pre-existing folders get tracked too
       return;
     }
     fs.mkdirSync(path.join(localDir, "profiles"), { recursive: true });
@@ -123,6 +126,7 @@ program
       yaml.dump({ mcp_servers: {}, extend_global: true }),
       "utf8"
     );
+    registerScaffold(localDir);
     console.log(chalk.green(`Created .gent/ in ${process.cwd()}`));
     console.log(chalk.gray("  Run `gent profile create` to add your first profile."));
     console.log(chalk.gray("  gent will use this .gent/ automatically when run from this directory."));
@@ -132,6 +136,45 @@ program
       )
     );
   });
+
+scaffoldCmd
+  .command("list")
+  .description("List tracked .gent folders and the hierarchy they extend")
+  .action(() => {
+    const scaffolds = listScaffolds();
+    if (scaffolds.length === 0) {
+      console.log(chalk.yellow("No tracked .gent folders. Run `gent scaffold` in a project."));
+      return;
+    }
+    console.log(chalk.bold("\nTracked .gent folders:\n"));
+    for (const dir of scaffolds) {
+      const exists = fs.existsSync(dir);
+      const missing = exists ? "" : chalk.red(" (missing)");
+      console.log(chalk.bold(displayGentDir(dir)) + missing);
+      if (exists) printParentTree(dir, "", new Set([path.resolve(dir)]));
+      console.log();
+    }
+  });
+
+// Recursively print a .gent dir's extends parents as an indented tree.
+function printParentTree(dir: string, prefix: string, seen: Set<string>): void {
+  const parents = parentDirs(dir);
+  parents.forEach((parent, i) => {
+    const isLast = i === parents.length - 1;
+    const branch = isLast ? "└─ " : "├─ ";
+    const key = path.resolve(parent);
+    const exists = fs.existsSync(parent);
+    const marker = !exists
+      ? chalk.red(" (missing)")
+      : seen.has(key)
+        ? chalk.gray(" (cycle)")
+        : "";
+    console.log(prefix + chalk.gray(branch) + displayGentDir(parent) + marker);
+    if (exists && !seen.has(key)) {
+      printParentTree(parent, prefix + (isLast ? "   " : chalk.gray("│  ")), new Set([...seen, key]));
+    }
+  });
+}
 
 // gent profile
 const profileCmd = program.command("profile").description("Manage profiles");

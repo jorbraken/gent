@@ -76,6 +76,7 @@ settings:
 | `gent list` | List all profiles |
 | `gent init` | First-time setup wizard |
 | `gent scaffold` | Create a project-local `.gent/` folder in the current directory |
+| `gent scaffold list` | List tracked `.gent/` folders and the hierarchy they extend |
 | `gent profile show <name>` | Print a profile's configuration |
 | `gent profile create [name]` | Create a new profile via wizard |
 | `gent profile edit <name>` | Edit a profile interactively |
@@ -110,6 +111,22 @@ gent scaffold   # creates ./.gent/{config.yaml,profiles/,skills/} in the current
 ```
 
 Any `gent` command run from within that directory tree (or a subdirectory) automatically uses the project-local `.gent/`.
+
+Every scaffolded folder is recorded in `~/.gent/scaffolds.yaml`. Run `gent scaffold list` to see all tracked `.gent/` folders, each shown with the chain of dirs it extends:
+
+```
+Tracked .gent folders:
+
+~/code/proj-a/.gent
+├─ ~/code/shared/.gent
+│  └─ ~/.gent
+└─ ~/.gent
+
+~/code/proj-b/.gent
+└─ ~/.gent
+```
+
+Folders that have since been deleted are flagged `(missing)`.
 
 **Inheriting from other `.gent` dirs** — a `.gent` can layer *over* one or more parent `.gent` dirs via `extends`, and those parents can extend further, forming a composable hierarchy. Inherited profiles, skills, and MCP servers all become usable from the project; anything you define nearer the local end overrides an inherited one with the same name.
 
