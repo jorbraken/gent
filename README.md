@@ -16,7 +16,8 @@ gent               # interactive picker with multi-select and per-session MCP to
 ```bash
 git clone https://github.com/jorbraken/gent.git
 cd gent
-pnpm install:global   # builds and links the CLI globally
+pnpm install
+pnpm run global   # builds and links the CLI globally (npm link)
 ```
 
 Requires Node.js ≥ 18 and [Claude Code](https://claude.ai/code).
@@ -69,26 +70,41 @@ settings:
 | `gent dev,qa` | Compose multiple profiles at runtime (comma-separated) |
 | `gent list` | List all profiles |
 | `gent init` | First-time setup wizard |
+| `gent scaffold` | Create a project-local `.gent/` folder in the current directory |
 | `gent profile show <name>` | Print a profile's configuration |
 | `gent profile create [name]` | Create a new profile via wizard |
-| `gent profile edit <name>` | Open a profile in `$EDITOR` |
+| `gent profile edit <name>` | Edit a profile interactively |
 | `gent profile delete <name>` | Delete a profile |
 | `gent mcp list` | List registered MCP servers |
 | `gent mcp add` | Register a new MCP server |
+| `gent mcp edit <name>` | Edit a registered MCP server |
 | `gent mcp remove <name>` | Remove an MCP server |
 
 ## Configuration
 
-All config lives in `~/.gent/`:
+Config lives in `~/.gent/` by default:
 
 ```
 ~/.gent/
 ├── config.yaml        # MCP server registry
-└── profiles/
-    ├── dev.yaml
-    ├── pm.yaml
+├── profiles/
+│   ├── dev.yaml
+│   ├── pm.yaml
+│   └── ...
+└── skills/
+    ├── my-skill/      # a directory containing SKILL.md, or a plugin-style bundle
     └── ...
 ```
+
+### Project-local config
+
+`gent` walks up from the current directory looking for a `.gent/` folder and uses it if found, otherwise it falls back to `~/.gent/`. This lets a repo carry its own profiles, MCP registry, and skills:
+
+```bash
+gent scaffold   # creates ./.gent/{config.yaml,profiles/,skills/} in the current dir
+```
+
+Any `gent` command run from within that directory tree (or a subdirectory) automatically uses the project-local `.gent/`.
 
 ### MCP server registry (`~/.gent/config.yaml`)
 
@@ -119,9 +135,9 @@ mcp:
   - github       # references keys in config.yaml
   - fetch
   - memory
-strict_mcp: true           # block global MCP config from loading
+strict_mcp: true           # pass --strict-mcp-config so only declared servers load
 skills:
-  - ~/.gent/skills/dev/   # added to skillsDirectories
+  - dev-tools              # references a directory in <gent-dir>/skills/
 settings:
   model: claude-sonnet-4-6
   permissionMode: auto     # auto | default | bypassPermissions
@@ -131,6 +147,17 @@ system_prompt_append: |
 ```
 
 The filename (`dev.yaml`) is always the profile name — the `name` field inside the YAML is ignored.
+
+### Skills
+
+Each entry under `skills:` references a directory inside `<gent-dir>/skills/`. `gent` loads them via `claude --plugin-dir`:
+
+- A directory containing a `skills/` subdirectory is treated as a **plugin-style bundle** and passed straight through as a `--plugin-dir`.
+- A directory with a `SKILL.md` at its root is an **individual skill**; `gent` aggregates all such skills into a single temporary plugin (via symlinks) and loads that.
+
+### Security
+
+`gent` never passes MCP config, settings, or the system-prompt append as inline command-line arguments — those would be visible to any user via `ps`. Instead it writes them to temp files with mode `0600` and passes the file paths (`--mcp-config`, `--settings`, `--append-system-prompt-file`). The temp directory is removed when `claude` exits.
 
 ## Built-in SDLC profiles
 
