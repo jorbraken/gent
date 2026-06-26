@@ -3,8 +3,8 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import chalk from "chalk";
-import { loadConfig, resolveEnv, type McpServerConfig } from "./config.js";
-import { expandHome, type Profile } from "./profiles.js";
+import { loadConfig, resolveEnv, SKILLS_DIR, type McpServerConfig } from "./config.js";
+import { type Profile } from "./profiles.js";
 
 export interface McpConfigJson {
   mcpServers: Record<string, McpServerConfig>;
@@ -14,7 +14,6 @@ interface SettingsJson {
   model?: string;
   permissionMode?: string;
   effortLevel?: string;
-  skillsDirectories?: string[];
   [key: string]: unknown;
 }
 
@@ -44,12 +43,26 @@ export function buildMcpConfig(
 
 export function buildSettings(profile: Profile): SettingsJson | null {
   const settings: SettingsJson = { ...(profile.settings ?? {}) };
-
-  if (profile.skills && profile.skills.length > 0) {
-    settings.skillsDirectories = profile.skills.map(expandHome);
-  }
-
   return Object.keys(settings).length > 0 ? settings : null;
+}
+
+// Skills with a `skills/` subdirectory are plugin-style bundles (passed as --plugin-dir).
+// Skills with a SKILL.md directly are individual skills, aggregated into a temp plugin.
+function classifySkills(skills: string[]): {
+  bundles: string[];
+  individuals: string[];
+} {
+  const bundles: string[] = [];
+  const individuals: string[] = [];
+  for (const name of skills) {
+    const p = path.join(SKILLS_DIR, name);
+    if (fs.existsSync(path.join(p, "skills"))) {
+      bundles.push(name);
+    } else {
+      individuals.push(name);
+    }
+  }
+  return { bundles, individuals };
 }
 
 export function run(profile: Profile, extraArgs: string[], dryRun = false): void {
@@ -77,13 +90,35 @@ export function run(profile: Profile, extraArgs: string[], dryRun = false): void
 
   claudeArgs.push(...extraArgs);
 
+  const { bundles, individuals } = classifySkills(profile.skills ?? []);
+
+  // Bundle-style skills are passed directly as --plugin-dir
+  for (const name of bundles) {
+    claudeArgs.push("--plugin-dir", path.join(SKILLS_DIR, name));
+  }
+
   if (dryRun) {
+    if (individuals.length > 0) {
+      // Show individual skills as a descriptive placeholder
+      claudeArgs.push("--plugin-dir", `<tmp>/skills-plugin [${individuals.join(", ")}]`);
+    }
     console.log(chalk.cyan("claude") + " " + claudeArgs.join(" "));
     return;
   }
 
   // Write sensitive args to temp files (mode 0o600) so they aren't visible in `ps`
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "gent-"));
+
+  // Individual skills: aggregate into a temp plugin with a skills/ subdir
+  if (individuals.length > 0) {
+    const pluginSkillsDir = path.join(tmpDir, "skills-plugin", "skills");
+    fs.mkdirSync(pluginSkillsDir, { recursive: true });
+    for (const name of individuals) {
+      fs.symlinkSync(path.join(SKILLS_DIR, name), path.join(pluginSkillsDir, name));
+    }
+    claudeArgs.push("--plugin-dir", path.join(tmpDir, "skills-plugin"));
+  }
+
   const safeArgs: string[] = [];
   let i = 0;
   while (i < claudeArgs.length) {

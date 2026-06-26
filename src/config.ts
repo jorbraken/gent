@@ -9,6 +9,7 @@ const home =
 export const GENT_DIR = path.join(home, ".gent");
 export const CONFIG_PATH = path.join(GENT_DIR, "config.yaml");
 export const PROFILES_DIR = path.join(GENT_DIR, "profiles");
+export const SKILLS_DIR = path.join(GENT_DIR, "skills");
 
 export interface McpServerConfig {
   type: "stdio" | "http" | "sse";
@@ -30,6 +31,16 @@ const DEFAULT_CONFIG: GentConfig = {
 export function ensureGentDir(): void {
   fs.mkdirSync(GENT_DIR, { recursive: true });
   fs.mkdirSync(PROFILES_DIR, { recursive: true });
+  fs.mkdirSync(SKILLS_DIR, { recursive: true });
+}
+
+export function listSkills(): string[] {
+  if (!fs.existsSync(SKILLS_DIR)) return [];
+  return fs
+    .readdirSync(SKILLS_DIR, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+    .sort();
 }
 
 export function configExists(): boolean {

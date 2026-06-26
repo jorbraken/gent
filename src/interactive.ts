@@ -1,6 +1,7 @@
 import { confirm, input, select } from "@inquirer/prompts";
 import chalk from "chalk";
 import { listProfiles, mergeProfiles, type Profile } from "./profiles.js";
+import { listSkills } from "./config.js";
 
 export async function pickProfile(): Promise<Profile> {
   const profiles = listProfiles();
@@ -35,6 +36,30 @@ export async function pickProfile(): Promise<Profile> {
   return customizeProfile(merged);
 }
 
+async function pickSkills(preSelected: string[]): Promise<string[]> {
+  const { checkbox } = await import("@inquirer/prompts");
+  const available = listSkills();
+
+  if (available.length === 0) {
+    if (preSelected.length === 0) {
+      console.log(
+        chalk.gray("  No skills found. Add skill directories to ~/.gent/skills/<name>/")
+      );
+    }
+    return preSelected;
+  }
+
+  const allNames = [...new Set([...available, ...preSelected])].sort();
+  return checkbox({
+    message: "Skills to load:",
+    choices: allNames.map((s) => ({
+      name: s,
+      value: s,
+      checked: preSelected.includes(s),
+    })),
+  });
+}
+
 async function customizeProfile(profile: Profile): Promise<Profile> {
   const { checkbox } = await import("@inquirer/prompts");
 
@@ -47,19 +72,12 @@ async function customizeProfile(profile: Profile): Promise<Profile> {
     mcp = selected.length > 0 ? selected : [];
   }
 
-  let skills = profile.skills;
-  if (skills && skills.length > 0) {
-    const selected = await checkbox({
-      message: "Skills to load (deselect any to exclude for this session):",
-      choices: skills.map((s) => ({ name: s, value: s, checked: true })),
-    });
-    skills = selected.length > 0 ? selected : [];
-  }
+  const skills = await pickSkills(profile.skills ?? []);
 
   return {
     ...profile,
     ...(mcp !== undefined ? { mcp } : {}),
-    ...(skills !== undefined ? { skills } : {}),
+    skills: skills.length > 0 ? skills : undefined,
   };
 }
 
@@ -164,6 +182,87 @@ export async function addMcpServerWizard(
   console.log(chalk.green(`MCP server "${name}" added.`));
 }
 
+export async function editMcpServerWizard(name: string): Promise<void> {
+  const { saveConfig, loadConfig } = await import("./config.js");
+
+  const config = loadConfig();
+  const existing = config.mcp_servers[name];
+  if (!existing) throw new Error(`MCP server "${name}" not found.`);
+
+  const type = await select({
+    message: "Type:",
+    choices: [
+      { name: "stdio (local process)", value: "stdio" },
+      { name: "http (remote HTTP endpoint)", value: "http" },
+      { name: "sse (Server-Sent Events)", value: "sse" },
+    ],
+    default: existing.type,
+  });
+
+  if (type === "stdio") {
+    const command = await input({
+      message: "Command (e.g. npx):",
+      default: existing.command ?? "",
+    });
+    const argsRaw = await input({
+      message: "Args (comma-separated, e.g. -y,@modelcontextprotocol/server-github):",
+      default: existing.args?.join(", ") ?? "",
+    });
+    const args = argsRaw.split(",").map((s) => s.trim()).filter(Boolean);
+
+    const envDefault = existing.env
+      ? Object.entries(existing.env).map(([k, v]) => `${k}=${v}`).join(", ")
+      : "";
+    const envRaw = await input({
+      message: "Env vars (KEY=VALUE pairs, comma-separated, use ${VAR} for env refs):",
+      default: envDefault,
+    });
+    const env: Record<string, string> = {};
+    if (envRaw.trim()) {
+      for (const pair of envRaw.split(",")) {
+        const [k, ...rest] = pair.trim().split("=");
+        if (k) env[k.trim()] = rest.join("=").trim();
+      }
+    }
+
+    config.mcp_servers[name] = {
+      type: "stdio",
+      command,
+      args,
+      ...(Object.keys(env).length ? { env } : {}),
+    };
+    saveConfig(config);
+  } else {
+    const url = await input({
+      message: "URL:",
+      default: existing.url ?? "",
+    });
+    const headersDefault = existing.headers
+      ? Object.entries(existing.headers).map(([k, v]) => `${k}=${v}`).join(", ")
+      : "";
+    const headersRaw = await input({
+      message: "Headers (KEY=VALUE pairs, comma-separated, or leave blank):",
+      default: headersDefault,
+    });
+    const headers: Record<string, string> = {};
+    if (headersRaw.trim()) {
+      for (const pair of headersRaw.split(",")) {
+        const [k, ...rest] = pair.trim().split("=");
+        if (k) headers[k.trim()] = rest.join("=").trim();
+      }
+    }
+
+    config.mcp_servers[name] = {
+      type: type as "http" | "sse",
+      url,
+      ...(Object.keys(headers).length ? { headers } : {}),
+    };
+    saveConfig(config);
+  }
+
+  console.log(chalk.green(`MCP server "${name}" updated.`));
+}
+
 const EFFORT_LEVELS = [
   { value: "", name: "Default (use claude's default)" },
   { value: "low", name: "Low — minimal thinking, fastest" },
@@ -179,6 +278,100 @@ const CLAUDE_MODELS = [
   { value: "claude-haiku-4-5-20251001", name: "Haiku 4.5 — fastest / cheapest" },
   { value: "__custom__", name: "Custom model ID..." },
 ];
+
+export async function editProfileWizard(name: string): Promise<void> {
+  const { saveProfile, loadProfile, profilePath } = await import("./profiles.js");
+  const { loadConfig } = await import("./config.js");
+  const { checkbox } = await import("@inquirer/prompts");
+
+  const existing = loadProfile(name);
+  const config = loadConfig();
+
+  const newName = await input({ message: "Profile name:", default: existing.name });
+  const description = await input({
+    message: "Description (optional):",
+    default: existing.description ?? "",
+  });
+
+  const serverNames = Object.keys(config.mcp_servers);
+  let mcp: string[] = existing.mcp ?? [];
+  if (serverNames.length > 0) {
+    mcp = await checkbox({
+      message: "Which MCP servers to include?",
+      choices: serverNames.map((s) => ({
+        name: s,
+        value: s,
+        checked: (existing.mcp ?? []).includes(s),
+      })),
+    });
+  }
+
+  const strictMcp =
+    mcp.length > 0
+      ? await confirm({
+          message: "Use --strict-mcp-config (block global MCP from loading)?",
+          default: existing.strict_mcp ?? true,
+        })
+      : false;
+
+  const skills = await pickSkills(existing.skills ?? []);
+
+  const existingModel = existing.settings?.model ?? "";
+  const isKnownModel = CLAUDE_MODELS.some((m) => m.value === existingModel);
+  const modelChoice = await select({
+    message: "Model:",
+    choices: CLAUDE_MODELS,
+    default: isKnownModel ? existingModel : "__custom__",
+  });
+  const model =
+    modelChoice === "__custom__"
+      ? await input({ message: "Enter model ID:", default: existingModel })
+      : modelChoice;
+
+  const effortLevel = await select({
+    message: "Effort level:",
+    choices: EFFORT_LEVELS,
+    default: existing.settings?.effortLevel ?? "",
+  });
+
+  const { editor } = await import("@inquirer/prompts");
+  const hasExistingPrompt = !!existing.system_prompt_append;
+  const editPrompt = await confirm({
+    message: hasExistingPrompt ? "Edit system prompt?" : "Add a system prompt to append?",
+    default: hasExistingPrompt,
+  });
+  const system_prompt_append = editPrompt
+    ? (await editor({ message: "System prompt to append:", default: existing.system_prompt_append ?? "" })).trim() || undefined
+    : existing.system_prompt_append;
+
+  const settings = {
+    ...(existing.settings ?? {}),
+    ...(model ? { model } : { model: undefined }),
+    ...(effortLevel ? { effortLevel } : { effortLevel: undefined }),
+  };
+  const cleanSettings = Object.fromEntries(
+    Object.entries(settings).filter(([, v]) => v !== undefined)
+  );
+
+  const updated: Profile = {
+    ...existing,
+    name: newName,
+    ...(description ? { description } : { description: undefined }),
+    ...(mcp.length ? { mcp } : { mcp: undefined }),
+    ...(skills.length ? { skills } : { skills: undefined }),
+    ...(strictMcp ? { strict_mcp: true } : { strict_mcp: undefined }),
+    ...(Object.keys(cleanSettings).length ? { settings: cleanSettings } : { settings: undefined }),
+    ...(system_prompt_append ? { system_prompt_append } : { system_prompt_append: undefined }),
+  };
+
+  if (newName !== name) {
+    const { unlinkSync } = await import("fs");
+    unlinkSync(profilePath(name));
+  }
+
+  saveProfile(updated);
+  console.log(chalk.green(`Profile "${newName}" updated.`));
+}
 
 export async function profileWizard(
   mcpRegistry: Record<string, unknown>
@@ -206,13 +399,7 @@ export async function profileWizard(
         })
       : false;
 
-  const skillsRaw = await input({
-    message: "Skills directories (comma-separated paths, or leave blank):",
-  });
-  const skills = skillsRaw
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const skills = await pickSkills([]);
 
   const modelChoice = await select({
     message: "Model:",
@@ -228,6 +415,12 @@ export async function profileWizard(
     choices: EFFORT_LEVELS,
   });
 
+  const { editor } = await import("@inquirer/prompts");
+  const addPrompt = await confirm({ message: "Add a system prompt to append?", default: false });
+  const system_prompt_append = addPrompt
+    ? (await editor({ message: "System prompt to append:" })).trim() || undefined
+    : undefined;
+
   const settings = {
     ...(model ? { model } : {}),
     ...(effortLevel ? { effortLevel } : {}),
@@ -240,6 +433,7 @@ export async function profileWizard(
     ...(skills.length ? { skills } : {}),
     ...(strictMcp ? { strict_mcp: true } : {}),
     ...(Object.keys(settings).length ? { settings } : {}),
+    ...(system_prompt_append ? { system_prompt_append } : {}),
   };
 
   return profile;

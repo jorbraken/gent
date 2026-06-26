@@ -20,9 +20,10 @@ import {
   pickProfile,
   initWizard,
   addMcpServerWizard,
+  editMcpServerWizard,
+  editProfileWizard,
   profileWizard,
 } from "./interactive.js";
-import { spawnSync } from "child_process";
 import path from "path";
 
 const program = new Command();
@@ -103,11 +104,22 @@ profileCmd
     if (p.mcp?.length) row("mcp", p.mcp.join(", "));
     if (p.strict_mcp) row("strict_mcp", "true");
     if (p.skills?.length) row("skills", p.skills.join(", "));
-    if (p.settings?.model) row("model", String(p.settings.model));
-    if (p.settings?.permissionMode) row("permission", String(p.settings.permissionMode));
-    if (p.settings?.effortLevel) row("effort", String(p.settings.effortLevel));
-    if (p.system_prompt_append)
-      row("prompt", chalk.gray(p.system_prompt_append.split("\n")[0] + "…"));
+    if (p.settings) {
+      const KNOWN = new Set(["model", "permissionMode", "effortLevel"]);
+      if (p.settings.model) row("model", String(p.settings.model));
+      if (p.settings.permissionMode) row("permission", String(p.settings.permissionMode));
+      if (p.settings.effortLevel) row("effort", String(p.settings.effortLevel));
+      for (const [k, v] of Object.entries(p.settings)) {
+        if (!KNOWN.has(k) && v !== undefined) row(k, String(v));
+      }
+    }
+    if (p.system_prompt_append) {
+      const lines = p.system_prompt_append.trimEnd().split("\n");
+      row("prompt", chalk.gray(lines[0]));
+      for (const line of lines.slice(1)) {
+        console.log(`  ${" ".repeat(12)} ${chalk.gray(line)}`);
+      }
+    }
     console.log();
   });
 
@@ -132,15 +144,13 @@ profileCmd
 
 profileCmd
   .command("edit <name>")
-  .description("Open a profile in $EDITOR")
-  .action((name: string) => {
+  .description("Edit a profile interactively")
+  .action(async (name: string) => {
     if (!profileExists(name)) {
       console.error(chalk.red(`Profile "${name}" not found.`));
       process.exit(1);
     }
-    const editor = process.env.EDITOR ?? "vi";
-    const p = path.join(PROFILES_DIR, `${name}.yaml`);
-    spawnSync(editor, [p], { stdio: "inherit" });
+    await editProfileWizard(name);
   });
 
 profileCmd
@@ -191,6 +201,18 @@ mcpCmd
     ensureGentDir();
     const config = loadConfig();
     await addMcpServerWizard(config.mcp_servers);
+  });
+
+mcpCmd
+  .command("edit <name>")
+  .description("Edit an existing MCP server")
+  .action(async (name: string) => {
+    const config = loadConfig();
+    if (!config.mcp_servers[name]) {
+      console.error(chalk.red(`MCP server "${name}" not found.`));
+      process.exit(1);
+    }
+    await editMcpServerWizard(name);
   });
 
 mcpCmd
