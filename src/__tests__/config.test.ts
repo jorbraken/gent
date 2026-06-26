@@ -90,6 +90,30 @@ describe("loadConfig", () => {
   });
 });
 
+// ─── listSkills ─────────────────────────────────────────────────────────────
+
+describe("listSkills", () => {
+  it("returns [] when skills directory does not exist", async () => {
+    const { listSkills } = await freshConfig();
+    expect(listSkills()).toEqual([]);
+  });
+
+  it("returns subdirectory names sorted alphabetically", async () => {
+    const { listSkills, SKILLS_DIR } = await freshConfig();
+    fs.mkdirSync(path.join(SKILLS_DIR, "ollama"), { recursive: true });
+    fs.mkdirSync(path.join(SKILLS_DIR, "docker"), { recursive: true });
+    expect(listSkills()).toEqual(["docker", "ollama"]);
+  });
+
+  it("ignores files, only returns directories", async () => {
+    const { listSkills, SKILLS_DIR } = await freshConfig();
+    fs.mkdirSync(SKILLS_DIR, { recursive: true });
+    fs.writeFileSync(path.join(SKILLS_DIR, "README.md"), "# skills", "utf8");
+    fs.mkdirSync(path.join(SKILLS_DIR, "real-skill"), { recursive: true });
+    expect(listSkills()).toEqual(["real-skill"]);
+  });
+});
+
 // ─── saveConfig / loadConfig round-trip ─────────────────────────────────────
 
 describe("saveConfig → loadConfig round-trip", () => {
@@ -107,5 +131,48 @@ describe("saveConfig → loadConfig round-trip", () => {
     };
     saveConfig(config);
     expect(loadConfig()).toEqual(config);
+  });
+});
+
+// ─── resolveGentDir — local .gent/ discovery ────────────────────────────────
+
+describe("resolveGentDir — local .gent/ discovery", () => {
+  let cwdRoot: string;
+  let savedCwd: string;
+
+  beforeEach(() => {
+    // The outer beforeEach sets GENT_HOME; clear it so resolveGentDir uses CWD walk.
+    delete process.env.GENT_HOME;
+    cwdRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gent-cwd-")));
+    savedCwd = process.cwd();
+  });
+
+  afterEach(() => {
+    process.chdir(savedCwd);
+    fs.rmSync(cwdRoot, { recursive: true, force: true });
+  });
+
+  it("uses local .gent/ when present in CWD", async () => {
+    const localGent = path.join(cwdRoot, ".gent");
+    fs.mkdirSync(localGent);
+    process.chdir(cwdRoot);
+    const { GENT_DIR } = await freshConfig();
+    expect(GENT_DIR).toBe(localGent);
+  });
+
+  it("walks up to a parent directory to find .gent/", async () => {
+    const localGent = path.join(cwdRoot, ".gent");
+    fs.mkdirSync(localGent);
+    const subdir = path.join(cwdRoot, "src", "components");
+    fs.mkdirSync(subdir, { recursive: true });
+    process.chdir(subdir);
+    const { GENT_DIR } = await freshConfig();
+    expect(GENT_DIR).toBe(localGent);
+  });
+
+  it("falls back to ~/.gent when no local .gent/ is found", async () => {
+    process.chdir(cwdRoot); // no .gent/ here
+    const { GENT_DIR } = await freshConfig();
+    expect(GENT_DIR).toBe(path.join(os.homedir(), ".gent"));
   });
 });

@@ -81,32 +81,18 @@ describe("buildSettings", () => {
     expect(result?.permissionMode).toBe("auto");
   });
 
-  it("expands ~/  paths and sets skillsDirectories", () => {
-    const profile: Profile = {
-      name: "dev",
-      skills: ["~/skills/dev", "/abs/path"],
-    };
-    const result = buildSettings(profile);
-    const dirs = result?.skillsDirectories as string[];
-    expect(dirs[0]).not.toContain("~/");
-    expect(dirs[1]).toBe("/abs/path");
+  it("returns null when profile only has skills (skills go via --plugin-dir, not settings)", () => {
+    const profile: Profile = { name: "dev", skills: ["ollama"] };
+    expect(buildSettings(profile)).toBeNull();
   });
 
-  it("merges skills into an otherwise-empty settings object", () => {
-    const profile: Profile = { name: "dev", skills: ["/some/path"] };
-    const result = buildSettings(profile);
-    expect(result?.skillsDirectories).toEqual(["/some/path"]);
-    expect(Object.keys(result ?? {}).length).toBe(1);
-  });
-
-  it("merges skills alongside existing settings", () => {
+  it("passes through arbitrary unknown settings keys", () => {
     const profile: Profile = {
       name: "dev",
-      settings: { model: "claude-sonnet-4-6" },
-      skills: ["/skills"],
+      settings: { model: "claude-sonnet-4-6", customKey: "custom-value" },
     };
     const result = buildSettings(profile);
     expect(result?.model).toBe("claude-sonnet-4-6");
-    expect(result?.skillsDirectories).toEqual(["/skills"]);
+    expect(result?.customKey).toBe("custom-value");
   });
 });
