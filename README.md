@@ -206,10 +206,10 @@ Pi has no MCP support, so when a `pi` profile lists MCP servers (or other unsupp
 
 ### Skills
 
-Each entry under `skills:` references a directory inside `<gent-dir>/skills/`. `gent` loads them via `claude --plugin-dir`:
+Each entry under `skills:` references a directory inside `<gent-dir>/skills/`. `gent` loads them via `claude --plugin-dir`, which requires a `.claude-plugin/plugin.json` manifest and only discovers skills one level deep (`skills/<name>/SKILL.md`). `gent` handles both real plugins and loose skill collections:
 
-- A directory containing a `skills/` subdirectory is treated as a **plugin-style bundle** and passed straight through as a `--plugin-dir`.
-- A directory with a `SKILL.md` at its root is an **individual skill**; `gent` aggregates all such skills into a single temporary plugin (via symlinks) and loads that.
+- A directory that ships its own `.claude-plugin/plugin.json` is a **real plugin** — passed straight through as `--plugin-dir` so claude loads its skills, commands, agents, and hooks itself.
+- Anything else is a **loose skill source**. `gent` recursively finds every `SKILL.md` beneath the referenced directory — at any depth — and symlinks each skill into a single temporary plugin (with a generated manifest) under a flat `skills/`, then loads that. This means a single skill (`<name>/SKILL.md`), a flat collection (`<name>/skills/<skill>/SKILL.md`), and a categorized collection (`<name>/skills/<category>/<skill>/SKILL.md`, e.g. [mattpocock-skills](https://github.com/mattpocock/skills)) all work. Duplicate skill names across sources are skipped with a warning.
 
 ### Security
 

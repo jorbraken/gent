@@ -85,23 +85,95 @@ export function buildSettings(profile: Profile): SettingsJson | null {
   return Object.keys(settings).length > 0 ? settings : null;
 }
 
-// Skills with a `skills/` subdirectory are plugin-style bundles (passed as --plugin-dir).
-// Skills with a SKILL.md directly are individual skills, aggregated into a temp plugin.
+// A skill directory found on disk (one containing a SKILL.md at its root).
+interface DiscoveredSkill {
+  name: string; // directory basename — its folder name in the aggregated plugin
+  dir: string; // absolute path to the skill directory
+}
+
+// Recursively collect skill directories (those with a SKILL.md) under `root`. A
+// directory with its own SKILL.md is a leaf skill — we don't descend into it.
+// This handles a single skill (root/SKILL.md), a flat collection
+// (root/skills/<skill>/SKILL.md), and categorized collections
+// (root/skills/<category>/<skill>/SKILL.md) alike. statSync follows symlinks.
+function collectSkillDirs(root: string, out: DiscoveredSkill[]): void {
+  if (fs.existsSync(path.join(root, "SKILL.md"))) {
+    out.push({ name: path.basename(root), dir: root });
+    return;
+  }
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const e of entries) {
+    const p = path.join(root, e.name);
+    let isDir = false;
+    try {
+      isDir = fs.statSync(p).isDirectory();
+    } catch {
+      isDir = false;
+    }
+    if (isDir) collectSkillDirs(p, out);
+  }
+}
+
+// Split referenced skills into real plugins (shipping a .claude-plugin manifest,
+// passed straight through so claude loads their skills/commands/agents itself)
+// and loose skill directories. The latter are flattened — every SKILL.md found
+// beneath them, at any depth — so categorized collections like mattpocock-skills
+// (skills/<category>/<skill>/SKILL.md) resolve even though claude only discovers
+// skills one level deep (skills/<name>/SKILL.md). Duplicate names are skipped.
 function classifySkills(skills: string[]): {
-  bundles: string[];
-  individuals: string[];
+  plugins: string[];
+  aggregated: DiscoveredSkill[];
 } {
-  const bundles: string[] = [];
-  const individuals: string[] = [];
+  const plugins: string[] = [];
+  const aggregated: DiscoveredSkill[] = [];
+  const seen = new Set<string>();
   for (const name of skills) {
     const p = resolveSkillPath(name);
-    if (fs.existsSync(path.join(p, "skills"))) {
-      bundles.push(name);
-    } else {
-      individuals.push(name);
+    if (fs.existsSync(path.join(p, ".claude-plugin", "plugin.json"))) {
+      plugins.push(name);
+      continue;
+    }
+    const found: DiscoveredSkill[] = [];
+    collectSkillDirs(p, found);
+    if (found.length === 0) {
+      console.warn(
+        chalk.yellow(`Warning: skill "${name}" — no SKILL.md found under ${p}`)
+      );
+      continue;
+    }
+    for (const s of found) {
+      if (seen.has(s.name)) {
+        console.warn(
+          chalk.yellow(`Warning: duplicate skill "${s.name}" — skipping ${s.dir}`)
+        );
+        continue;
+      }
+      seen.add(s.name);
+      aggregated.push(s);
     }
   }
-  return { bundles, individuals };
+  return { plugins, aggregated };
+}
+
+// claude's --plugin-dir requires a .claude-plugin/plugin.json manifest. gent
+// builds a temp plugin holding flat skill symlinks, so it writes a minimal one.
+function writePluginManifest(pluginRoot: string): void {
+  const dir = path.join(pluginRoot, ".claude-plugin");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, "plugin.json"),
+    JSON.stringify({
+      name: "gent-skills",
+      version: "0.0.0",
+      description: "Skills aggregated by gent",
+    }),
+    "utf8"
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -183,20 +255,25 @@ const claudeAdapter: AgentAdapter = {
       }
     }
 
-    const { bundles, individuals } = classifySkills(profile.skills ?? []);
-    for (const name of bundles) {
+    const { plugins, aggregated } = classifySkills(profile.skills ?? []);
+    for (const name of plugins) {
       args.push("--plugin-dir", resolveSkillPath(name));
     }
-    if (individuals.length > 0) {
+    if (aggregated.length > 0) {
       if (tmpDir === null) {
-        args.push("--plugin-dir", `<tmp>/skills-plugin [${individuals.join(", ")}]`);
+        args.push(
+          "--plugin-dir",
+          `<tmp>/skills-plugin [${aggregated.map((s) => s.name).join(", ")}]`
+        );
       } else {
-        const pluginSkillsDir = path.join(tmpDir, "skills-plugin", "skills");
+        const pluginRoot = path.join(tmpDir, "skills-plugin");
+        const pluginSkillsDir = path.join(pluginRoot, "skills");
         fs.mkdirSync(pluginSkillsDir, { recursive: true });
-        for (const name of individuals) {
-          fs.symlinkSync(resolveSkillPath(name), path.join(pluginSkillsDir, name));
+        writePluginManifest(pluginRoot);
+        for (const s of aggregated) {
+          fs.symlinkSync(s.dir, path.join(pluginSkillsDir, s.name));
         }
-        args.push("--plugin-dir", path.join(tmpDir, "skills-plugin"));
+        args.push("--plugin-dir", pluginRoot);
       }
     }
 
@@ -269,9 +346,16 @@ const piAdapter: AgentAdapter = {
       }
     }
 
-    // pi loads a skill directory directly — no plugin aggregation needed.
-    for (const name of profile.skills ?? []) {
-      args.push("--skill", resolveSkillPath(name));
+    // pi loads each skill directory directly via --skill. It has no plugin
+    // concept, so flatten everything (plugins included) down to skill dirs.
+    const { plugins, aggregated } = classifySkills(profile.skills ?? []);
+    for (const name of plugins) {
+      const found: DiscoveredSkill[] = [];
+      collectSkillDirs(resolveSkillPath(name), found);
+      for (const s of found) args.push("--skill", s.dir);
+    }
+    for (const s of aggregated) {
+      args.push("--skill", s.dir);
     }
 
     return args;
