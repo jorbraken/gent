@@ -37,6 +37,8 @@ export const GLOBAL_GENT_DIR = resolveGlobalDir();
 export const CONFIG_PATH = path.join(GENT_DIR, "config.yaml");
 export const PROFILES_DIR = path.join(GENT_DIR, "profiles");
 export const SKILLS_DIR = path.join(GENT_DIR, "skills");
+export const SANDBOXES_DIR = path.join(GENT_DIR, "sandboxes");
+export const RUNS_DIR = path.join(GENT_DIR, "runs");
 
 // Expand a leading `~/` to the home directory. Kept local (not imported from
 // profiles.ts) to avoid a config <-> profiles import cycle.
@@ -146,6 +148,15 @@ export function resolveProfilePath(name: string): string | null {
   return null;
 }
 
+// First existing match for a sandbox across the lookup chain (local wins).
+export function resolveSandboxPath(id: string): string | null {
+  for (const dir of gentDirChain()) {
+    const p = path.join(dir, "sandboxes", `${id}.yaml`);
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
 // Resolve a skill directory across the chain; falls back to the local path so
 // callers still get a sensible (if missing) path to report.
 export function resolveSkillPath(name: string): string {
@@ -195,6 +206,7 @@ export function ensureGentDir(): void {
   fs.mkdirSync(GENT_DIR, { recursive: true });
   fs.mkdirSync(PROFILES_DIR, { recursive: true });
   fs.mkdirSync(SKILLS_DIR, { recursive: true });
+  fs.mkdirSync(SANDBOXES_DIR, { recursive: true });
 }
 
 export function listSkills(): string[] {
