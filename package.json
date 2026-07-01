@@ -1,7 +1,7 @@
 {
   "name": "gent",
-  "version": "0.1.0",
-  "description": "Coding-agent environment profile manager for Claude Code, Pi, and Codex",
+  "version": "0.2.0",
+  "description": "Coding-agent environment profile manager and project/task tracker for Claude Code, Pi, and Codex",
   "license": "MIT",
   "author": "jorbraken",
   "repository": {
@@ -9,7 +9,7 @@
     "url": "https://github.com/jorbraken/gent.git"
   },
   "files": ["dist", "LICENSE"],
-  "engines": { "node": ">=18.0.0" },
+  "engines": { "node": ">=22.0.0" },
   "type": "module",
   "bin": {
     "gent": "./dist/cli.js"
@@ -24,11 +24,13 @@
   },
   "dependencies": {
     "@inquirer/prompts": "^7.5.2",
+    "better-sqlite3": "^11.8.1",
     "chalk": "^5.3.0",
     "commander": "^12.1.0",
     "js-yaml": "^4.1.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.0.0",
     "tsup": "^8.3.0",

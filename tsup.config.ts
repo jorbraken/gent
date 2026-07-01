@@ -5,5 +5,6 @@ export default defineConfig({
   format: ["esm"],
   target: "node18",
   clean: true,
+  external: ["better-sqlite3"],
   banner: { js: "#!/usr/bin/env node" },
 });

@@ -33,13 +33,30 @@ import {
   profileWizard,
 } from "./interactive.js";
 import path from "path";
+import { registerCreate } from "./commands/create.js";
+import { registerAdd } from "./commands/add.js";
+import { registerList } from "./commands/list.js";
+import { registerShow } from "./commands/show.js";
+import { registerUpdate } from "./commands/update.js";
+import { registerDelete } from "./commands/delete.js";
+import { registerDone } from "./commands/done.js";
 
 const program = new Command();
+
+// opsys-derived verb-first commands (project/task/bug/comment/changelog/memory).
+// gent's own entities (profile/mcp/scaffold) are attached to the same verb
+// groups below so the whole CLI follows one `gent <verb> <type>` grammar.
+const createCmd = registerCreate(program);
+const addCmd = registerAdd(program);
+const showCmd = registerShow(program);
+const updateCmd = registerUpdate(program);
+const deleteCmd = registerDelete(program);
+registerDone(program);
 
 program
   .name("gent")
   .description("Coding-agent environment profile manager for Claude Code, Pi, and Codex")
-  .version("0.1.0")
+  .version("0.2.0")
   .argument("[profile]", "profile name(s) to activate — comma-separate to compose (e.g. dev,qa)")
   .option("--dry-run", "print the composed agent command without running it")
   .option("--agent <name>", `agent to run: ${AGENT_NAMES.join(" or ")} (overrides the profile)`)
@@ -81,79 +98,12 @@ program
     run(profile, extraArgs, options.dryRun ?? false);
   });
 
-// gent list
-program
-  .command("list")
-  .description("List all profiles")
-  .action(() => {
-    const profiles = listProfiles();
-    if (profiles.length === 0) {
-      console.log(chalk.yellow("No profiles. Run `gent init` to get started."));
-      return;
-    }
-    for (const p of profiles) {
-      const desc = p.description ? chalk.gray(` — ${p.description}`) : "";
-      const mcp = p.mcp?.length
-        ? chalk.cyan(` [mcp: ${p.mcp.join(", ")}]`)
-        : "";
-      console.log(`  ${chalk.bold(p.name)}${desc}${mcp}`);
-    }
-  });
-
 // gent init
 program
   .command("init")
   .description("Interactive first-time setup")
   .action(async () => {
     await initWizard();
-  });
-
-// gent scaffold
-const scaffoldCmd = program
-  .command("scaffold")
-  .description("Create a project-local .gent/ folder in the current directory")
-  .action(() => {
-    const localDir = path.join(process.cwd(), ".gent");
-    if (fs.existsSync(localDir)) {
-      console.log(chalk.yellow(`.gent/ already exists at ${localDir}`));
-      registerScaffold(localDir); // ensure pre-existing folders get tracked too
-      return;
-    }
-    fs.mkdirSync(path.join(localDir, "profiles"), { recursive: true });
-    fs.mkdirSync(path.join(localDir, "skills"), { recursive: true });
-    fs.writeFileSync(
-      path.join(localDir, "config.yaml"),
-      yaml.dump({ mcp_servers: {}, extend_global: true }),
-      "utf8"
-    );
-    registerScaffold(localDir);
-    console.log(chalk.green(`Created .gent/ in ${process.cwd()}`));
-    console.log(chalk.gray("  Run `gent profile create` to add your first profile."));
-    console.log(chalk.gray("  gent will use this .gent/ automatically when run from this directory."));
-    console.log(
-      chalk.gray(
-        "  extend_global: true is set, so it also inherits profiles, skills, and MCP servers from ~/.gent."
-      )
-    );
-  });
-
-scaffoldCmd
-  .command("list")
-  .description("List tracked .gent folders and the hierarchy they extend")
-  .action(() => {
-    const scaffolds = listScaffolds();
-    if (scaffolds.length === 0) {
-      console.log(chalk.yellow("No tracked .gent folders. Run `gent scaffold` in a project."));
-      return;
-    }
-    console.log(chalk.bold("\nTracked .gent folders:\n"));
-    for (const dir of scaffolds) {
-      const exists = fs.existsSync(dir);
-      const missing = exists ? "" : chalk.red(" (missing)");
-      console.log(chalk.bold(displayGentDir(dir)) + missing);
-      if (exists) printParentTree(dir, "", new Set([path.resolve(dir)]));
-      console.log();
-    }
   });
 
 // Recursively print a .gent dir's extends parents as an indented tree.
@@ -176,11 +126,133 @@ function printParentTree(dir: string, prefix: string, seen: Set<string>): void {
   });
 }
 
-// gent profile
-const profileCmd = program.command("profile").description("Manage profiles");
+function printProfileList(): void {
+  const profiles = listProfiles();
+  if (profiles.length === 0) {
+    console.log(chalk.yellow("No profiles. Run `gent init` to get started."));
+    return;
+  }
+  for (const p of profiles) {
+    const desc = p.description ? chalk.gray(` — ${p.description}`) : "";
+    const mcp = p.mcp?.length ? chalk.cyan(` [mcp: ${p.mcp.join(", ")}]`) : "";
+    console.log(`  ${chalk.bold(p.name)}${desc}${mcp}`);
+  }
+}
 
-profileCmd
-  .command("show <name>")
+// gent list (bare = profiles; also hosts list project/task/bug/... subcommands)
+const listCmd = program
+  .command("list")
+  .description("List profiles, MCP servers, scaffolds, projects, or project objects")
+  .action(() => printProfileList());
+registerList(listCmd);
+
+listCmd
+  .command("profile")
+  .alias("profiles")
+  .description("List all profiles")
+  .action(() => printProfileList());
+
+listCmd
+  .command("mcp")
+  .description("List registered MCP servers")
+  .action(() => {
+    const config = loadConfig();
+    const servers = Object.entries(config.mcp_servers);
+    if (servers.length === 0) {
+      console.log(chalk.yellow("No MCP servers registered. Run `gent add mcp`."));
+      return;
+    }
+    const localNames = new Set(Object.keys(loadLocalConfig().mcp_servers));
+    for (const [name, def] of servers) {
+      const detail =
+        def.type === "stdio"
+          ? chalk.gray(`${def.command} ${(def.args ?? []).join(" ")}`)
+          : chalk.gray(def.url ?? "");
+      const inherited = localNames.has(name) ? "" : chalk.gray(" (inherited)");
+      console.log(`  ${chalk.bold(name)} ${chalk.cyan(`[${def.type}]`)} ${detail}${inherited}`);
+    }
+  });
+
+listCmd
+  .command("scaffold")
+  .description("List tracked .gent folders and the hierarchy they extend")
+  .action(() => {
+    const scaffolds = listScaffolds();
+    if (scaffolds.length === 0) {
+      console.log(chalk.yellow("No tracked .gent folders. Run `gent create scaffold` in a project."));
+      return;
+    }
+    console.log(chalk.bold("\nTracked .gent folders:\n"));
+    for (const dir of scaffolds) {
+      const exists = fs.existsSync(dir);
+      const missing = exists ? "" : chalk.red(" (missing)");
+      console.log(chalk.bold(displayGentDir(dir)) + missing);
+      if (exists) printParentTree(dir, "", new Set([path.resolve(dir)]));
+      console.log();
+    }
+  });
+
+// gent create profile / create scaffold
+createCmd
+  .command("profile [name]")
+  .description("Create a new profile")
+  .action(async (name?: string) => {
+    const config = loadConfig();
+    const profile = await profileWizard(config.mcp_servers);
+    if (name) profile.name = name;
+    if (profileExists(profile.name)) {
+      const { confirm } = await import("@inquirer/prompts");
+      const ok = await confirm({
+        message: `Profile "${profile.name}" already exists. Overwrite?`,
+        default: false,
+      });
+      if (!ok) return;
+    }
+    saveProfile(profile);
+    console.log(chalk.green(`Profile "${profile.name}" saved. Run: gent ${profile.name}`));
+  });
+
+createCmd
+  .command("scaffold")
+  .description("Create a project-local .gent/ folder in the current directory")
+  .action(() => {
+    const localDir = path.join(process.cwd(), ".gent");
+    if (fs.existsSync(localDir)) {
+      console.log(chalk.yellow(`.gent/ already exists at ${localDir}`));
+      registerScaffold(localDir); // ensure pre-existing folders get tracked too
+      return;
+    }
+    fs.mkdirSync(path.join(localDir, "profiles"), { recursive: true });
+    fs.mkdirSync(path.join(localDir, "skills"), { recursive: true });
+    fs.writeFileSync(
+      path.join(localDir, "config.yaml"),
+      yaml.dump({ mcp_servers: {}, extend_global: true }),
+      "utf8"
+    );
+    registerScaffold(localDir);
+    console.log(chalk.green(`Created .gent/ in ${process.cwd()}`));
+    console.log(chalk.gray("  Run `gent create profile` to add your first profile."));
+    console.log(chalk.gray("  gent will use this .gent/ automatically when run from this directory."));
+    console.log(
+      chalk.gray(
+        "  extend_global: true is set, so it also inherits profiles, skills, and MCP servers from ~/.gent."
+      )
+    );
+  });
+
+// gent add mcp
+addCmd
+  .command("mcp")
+  .description("Register a new MCP server")
+  .action(async () => {
+    ensureGentDir();
+    const config = loadConfig();
+    await addMcpServerWizard(config.mcp_servers);
+  });
+
+// gent show profile <name>
+showCmd
+  .command("profile <name>")
   .description("Print a profile's configuration")
   .action((name: string) => {
     if (!profileExists(name)) {
@@ -234,27 +306,9 @@ profileCmd
     console.log();
   });
 
-profileCmd
-  .command("create [name]")
-  .description("Create a new profile")
-  .action(async (name?: string) => {
-    const config = loadConfig();
-    const profile = await profileWizard(config.mcp_servers);
-    if (name) profile.name = name;
-    if (profileExists(profile.name)) {
-      const { confirm } = await import("@inquirer/prompts");
-      const ok = await confirm({
-        message: `Profile "${profile.name}" already exists. Overwrite?`,
-        default: false,
-      });
-      if (!ok) return;
-    }
-    saveProfile(profile);
-    console.log(chalk.green(`Profile "${profile.name}" saved. Run: gent ${profile.name}`));
-  });
-
-profileCmd
-  .command("edit <name>")
+// gent update profile <name> / update mcp <name>
+updateCmd
+  .command("profile <name>")
   .description("Edit a profile interactively")
   .action(async (name: string) => {
     if (!profileExists(name)) {
@@ -264,8 +318,21 @@ profileCmd
     await editProfileWizard(name);
   });
 
-profileCmd
-  .command("delete <name>")
+updateCmd
+  .command("mcp <name>")
+  .description("Edit an existing MCP server")
+  .action(async (name: string) => {
+    const config = loadConfig();
+    if (!config.mcp_servers[name]) {
+      console.error(chalk.red(`MCP server "${name}" not found.`));
+      process.exit(1);
+    }
+    await editMcpServerWizard(name);
+  });
+
+// gent delete profile <name> / delete mcp <name>
+deleteCmd
+  .command("profile <name>")
   .description("Delete a profile")
   .action(async (name: string) => {
     if (!profileExists(name)) {
@@ -283,53 +350,8 @@ profileCmd
     console.log(chalk.green(`Profile "${name}" deleted.`));
   });
 
-// gent mcp
-const mcpCmd = program.command("mcp").description("Manage MCP server registry");
-
-mcpCmd
-  .command("list")
-  .description("List registered MCP servers")
-  .action(() => {
-    const config = loadConfig();
-    const servers = Object.entries(config.mcp_servers);
-    if (servers.length === 0) {
-      console.log(chalk.yellow("No MCP servers registered. Run `gent mcp add`."));
-      return;
-    }
-    const localNames = new Set(Object.keys(loadLocalConfig().mcp_servers));
-    for (const [name, def] of servers) {
-      const detail =
-        def.type === "stdio"
-          ? chalk.gray(`${def.command} ${(def.args ?? []).join(" ")}`)
-          : chalk.gray(def.url ?? "");
-      const inherited = localNames.has(name) ? "" : chalk.gray(" (inherited)");
-      console.log(`  ${chalk.bold(name)} ${chalk.cyan(`[${def.type}]`)} ${detail}${inherited}`);
-    }
-  });
-
-mcpCmd
-  .command("add")
-  .description("Register a new MCP server")
-  .action(async () => {
-    ensureGentDir();
-    const config = loadConfig();
-    await addMcpServerWizard(config.mcp_servers);
-  });
-
-mcpCmd
-  .command("edit <name>")
-  .description("Edit an existing MCP server")
-  .action(async (name: string) => {
-    const config = loadConfig();
-    if (!config.mcp_servers[name]) {
-      console.error(chalk.red(`MCP server "${name}" not found.`));
-      process.exit(1);
-    }
-    await editMcpServerWizard(name);
-  });
-
-mcpCmd
-  .command("remove <name>")
+deleteCmd
+  .command("mcp <name>")
   .description("Remove an MCP server from the registry")
   .action(async (name: string) => {
     const config = loadLocalConfig();

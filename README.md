@@ -22,7 +22,7 @@ pnpm install
 pnpm run global   # builds and links the CLI globally (npm link)
 ```
 
-Requires Node.js ≥ 18 and at least one supported agent CLI (`claude`, `pi`, or `codex`) on your `PATH`.
+Requires Node.js ≥ 22 and at least one supported agent CLI (`claude`, `pi`, or `codex`) on your `PATH`.
 
 ## Quick start
 
@@ -72,22 +72,26 @@ settings:
 
 ## Commands
 
+gent follows a `gent <verb> <type>` grammar for everything except launching a profile, which stays a bare positional argument since it's the most common action.
+
 | Command | Description |
 |---|---|
 | `gent [profile]` | Launch an agent with a profile; interactive multi-select picker if omitted |
 | `gent dev,qa` | Compose multiple profiles at runtime (comma-separated) |
-| `gent list` | List all profiles |
 | `gent init` | First-time setup wizard |
-| `gent scaffold` | Create a project-local `.gent/` folder in the current directory |
-| `gent scaffold list` | List tracked `.gent/` folders and the hierarchy they extend |
-| `gent profile show <name>` | Print a profile's configuration |
-| `gent profile create [name]` | Create a new profile via wizard |
-| `gent profile edit <name>` | Edit a profile interactively |
-| `gent profile delete <name>` | Delete a profile |
-| `gent mcp list` | List registered MCP servers |
-| `gent mcp add` | Register a new MCP server |
-| `gent mcp edit <name>` | Edit a registered MCP server |
-| `gent mcp remove <name>` | Remove an MCP server |
+| `gent create profile [name]` | Create a new profile via wizard |
+| `gent show profile <name>` | Print a profile's configuration |
+| `gent update profile <name>` | Edit a profile interactively |
+| `gent delete profile <name>` | Delete a profile |
+| `gent list profile` | List all profiles (same as bare `gent list`) |
+| `gent add mcp` | Register a new MCP server |
+| `gent update mcp <name>` | Edit a registered MCP server |
+| `gent delete mcp <name>` | Remove an MCP server |
+| `gent list mcp` | List registered MCP servers |
+| `gent create scaffold` | Create a project-local `.gent/` folder in the current directory |
+| `gent list scaffold` | List tracked `.gent/` folders and the hierarchy they extend |
+
+gent also tracks projects, tasks, bugs, comments, changelog entries, and memories in a SQLite-backed registry (`~/.opsys`) — see [Project tracking](#project-tracking) below.
 
 ## Configuration
 
@@ -110,12 +114,12 @@ Config lives in `~/.gent/` by default:
 `gent` walks up from the current directory looking for a `.gent/` folder and uses it if found, otherwise it falls back to `~/.gent/`. This lets a repo carry its own profiles, MCP registry, and skills:
 
 ```bash
-gent scaffold   # creates ./.gent/{config.yaml,profiles/,skills/} in the current dir
+gent create scaffold   # creates ./.gent/{config.yaml,profiles/,skills/} in the current dir
 ```
 
 Any `gent` command run from within that directory tree (or a subdirectory) automatically uses the project-local `.gent/`.
 
-Every scaffolded folder is recorded in `~/.gent/scaffolds.yaml`. Run `gent scaffold list` to see all tracked `.gent/` folders, each shown with the chain of dirs it extends:
+Every scaffolded folder is recorded in `~/.gent/scaffolds.yaml`. Run `gent list scaffold` to see all tracked `.gent/` folders, each shown with the chain of dirs it extends:
 
 ```
 Tracked .gent folders:
@@ -147,7 +151,7 @@ Each `extends` entry is a path to another `.gent` directory: `~` is expanded, ab
 
 Resolution walks the chain **nearest-first** (local wins). When a dir is reached through multiple parents, its first occurrence in a left-to-right walk wins. **Circular** `extends` are rejected with a clear error; a parent path that doesn't exist is warned about and skipped.
 
-Writes always go to the local `.gent/` — `gent profile create`, `gent mcp add`, etc. never modify a parent dir. Inherited MCP servers show up in `gent mcp list` tagged `(inherited)`.
+Writes always go to the local `.gent/` — `gent create profile`, `gent add mcp`, etc. never modify a parent dir. Inherited MCP servers show up in `gent list mcp` tagged `(inherited)`.
 
 ### MCP server registry (`~/.gent/config.yaml`)
 
@@ -209,7 +213,7 @@ A profile runs against `claude` by default. Set `agent: pi` or `agent: codex` (o
 | `mcp` / `strict_mcp` | `--mcp-config` / `--strict-mcp-config` | *not supported — ignored with a warning* | *not passed directly — configure MCP in the Codex profile* |
 | `settings.permissionMode` and other keys | `--settings` | *not supported — ignored with a warning* | *not supported — ignored with a warning* |
 
-Pi has no MCP support, so when a `pi` profile lists MCP servers (or other unsupported settings) `gent` prints a yellow warning and skips them. Codex has MCP and skills support through its own configuration system; `gent` selects a Codex config profile with `codex --profile <name>`, so put Codex-specific MCP, skills, instructions, sandbox, and approval defaults in `$CODEX_HOME/<name>.config.toml` (usually `~/.codex/<name>.config.toml`). The `gent profile create/edit` wizard is agent-aware: pick the agent up front and it offers the right model/thinking choices and hides the MCP prompts for agents that don't use gent's MCP flags directly.
+Pi has no MCP support, so when a `pi` profile lists MCP servers (or other unsupported settings) `gent` prints a yellow warning and skips them. Codex has MCP and skills support through its own configuration system; `gent` selects a Codex config profile with `codex --profile <name>`, so put Codex-specific MCP, skills, instructions, sandbox, and approval defaults in `$CODEX_HOME/<name>.config.toml` (usually `~/.codex/<name>.config.toml`). The `gent create profile` / `gent update profile` wizard is agent-aware: pick the agent up front and it offers the right model/thinking choices and hides the MCP prompts for agents that don't use gent's MCP flags directly.
 
 ### Skills
 
@@ -221,6 +225,39 @@ Each entry under `skills:` references a directory inside `<gent-dir>/skills/`. `
 ### Security
 
 `gent` never passes MCP config, settings, or the system-prompt append as inline command-line arguments — those would be visible to any user via `ps`. Instead it writes them to temp files with mode `0600` and passes the file paths (for claude: `--mcp-config`, `--settings`, `--append-system-prompt-file`; for pi: `--append-system-prompt` with a file path). For Codex, put sensitive MCP and instruction configuration in the Codex profile file selected by `--profile`. The temp directory is removed when the agent exits.
+
+## Project tracking
+
+Alongside profiles, gent tracks projects and their tasks, bugs, comments, changelog entries, and memories in a SQLite-backed registry — separate from the YAML-based `.gent` profile config (see [`docs/state.md`](docs/state.md) for how the two dotdirs divide responsibilities).
+
+```bash
+# Register the current directory as a project
+gent create project my-app --yes
+
+# Work items
+gent add task "Build CLI router" --status todo --priority high
+gent list task --status todo
+gent show task 1
+gent update task 1 --status in_progress
+gent done task 1
+gent delete task 1
+
+gent add bug "Crash on startup" --severity high
+gent update bug 1 --status blocked
+
+# Comments attach to a task or bug
+gent add comment --task 1 "Needs reproduction steps"
+gent add comment --bug 1 "Seen on macOS"
+
+# Changelog entries
+gent add changelog "v0.1.0" --body "Initial CLI"
+
+# Memories — kind is note (default), decision, or lesson
+gent add memory "Use explicit repositories, not ORM" --kind decision
+gent list memory
+```
+
+`--project <name-or-id>` targets a specific registered project instead of inferring one from the current directory; pass it when running a command outside the project's root.
 
 ## Built-in SDLC profiles
 
