@@ -1,5 +1,4 @@
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import type Database from "better-sqlite3";
 import { openDatabase } from "../db/connection.js";
@@ -8,14 +7,7 @@ import { migrateProjectDb } from "../db/migrations/project.js";
 import { ProjectRegistryRepository } from "../db/repositories/projectRegistryRepository.js";
 import { resolveProject } from "../core/projectResolver.js";
 import { OpsysError } from "../core/errors.js";
-
-// ~/.opsys/projects.db. In tests OPSYS_HOME redirects it, mirroring GENT_HOME in config.ts.
-export function opsysHome(): string {
-  if (process.env.NODE_ENV === "test" && process.env.OPSYS_HOME) {
-    return process.env.OPSYS_HOME;
-  }
-  return homedir();
-}
+import { GLOBAL_GENT_DIR } from "../config.js";
 
 export interface GlobalRegistryOptions {
   yes?: boolean;
@@ -26,7 +18,7 @@ export interface GlobalRegistryOptions {
 async function ensureGlobalDb(globalDbPath: string, options: GlobalRegistryOptions): Promise<void> {
   if (existsSync(globalDbPath) || options.yes) return;
   if (!options.isInteractive || !options.confirmCreateGlobalDb) {
-    throw new OpsysError("Global registry does not exist; rerun with --yes to create ~/.opsys/projects.db");
+    throw new OpsysError("Global registry does not exist; rerun with --yes to create ~/.gent/projects.db");
   }
   const confirmed = await options.confirmCreateGlobalDb();
   if (!confirmed) throw new OpsysError("Global registry creation declined");
@@ -37,7 +29,7 @@ export async function withRegistry<T>(
   options: GlobalRegistryOptions,
   callback: (registry: ProjectRegistryRepository) => T | Promise<T>
 ): Promise<T> {
-  const globalDbPath = join(opsysHome(), ".opsys", "projects.db");
+  const globalDbPath = join(GLOBAL_GENT_DIR, "projects.db");
   await ensureGlobalDb(globalDbPath, options);
   const globalDb = openDatabase(globalDbPath);
   migrateGlobalDb(globalDb);
@@ -84,7 +76,7 @@ export function globalRegistryOptions(yes?: boolean): GlobalRegistryOptions {
     confirmCreateGlobalDb: async () => {
       const { confirm } = await import("@inquirer/prompts");
       return confirm({
-        message: "Global opsys registry (~/.opsys/projects.db) doesn't exist yet. Create it?",
+        message: "Global project registry (~/.gent/projects.db) doesn't exist yet. Create it?",
         default: true,
       });
     },

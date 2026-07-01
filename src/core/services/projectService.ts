@@ -12,7 +12,7 @@ export class ProjectService {
   initProject(input: { name: unknown; rootPath: string }): RegistryProject {
     const name = requireString(input.name, 'project name');
     const rootPath = resolve(input.rootPath);
-    const dbPath = join(rootPath, '.opsys', 'project.db');
+    const dbPath = join(rootPath, '.gent', 'project.db');
     const projectDb = openDatabase(dbPath);
     try {
       migrateProjectDb(projectDb);

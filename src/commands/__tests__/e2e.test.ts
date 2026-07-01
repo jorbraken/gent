@@ -52,8 +52,8 @@ describe("gent verb-first CLI e2e", () => {
     const env = tempEnv();
 
     expectSuccess(runGent(env, ["create", "project", "demo", "--yes"]));
-    expect(existsSync(join(env.home, ".opsys", "projects.db"))).toBe(true);
-    expect(existsSync(join(env.projectRoot, ".opsys", "project.db"))).toBe(true);
+    expect(existsSync(join(env.home, ".gent", "projects.db"))).toBe(true);
+    expect(existsSync(join(env.projectRoot, ".gent", "project.db"))).toBe(true);
     expect(expectSuccess(runGent(env, ["list", "project"]))).toContain("demo");
 
     expectSuccess(

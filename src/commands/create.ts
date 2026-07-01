@@ -8,7 +8,7 @@ export function registerCreate(program: Command): Command {
 
   create
     .command("project <name>")
-    .description("Register a new project, initializing its .opsys/project.db")
+    .description("Register a new project, initializing its .gent/project.db")
     .option("--yes", "create the global registry non-interactively if it doesn't exist yet")
     .action(async (name: string, opts: { yes?: boolean }) => {
       await withRegistry(globalRegistryOptions(opts.yes), (registry) => {

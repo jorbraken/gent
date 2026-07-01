@@ -91,7 +91,7 @@ gent follows a `gent <verb> <type>` grammar for everything except launching a pr
 | `gent create scaffold` | Create a project-local `.gent/` folder in the current directory |
 | `gent list scaffold` | List tracked `.gent/` folders and the hierarchy they extend |
 
-gent also tracks projects, tasks, bugs, comments, changelog entries, and memories in a SQLite-backed registry (`~/.opsys`) — see [Project tracking](#project-tracking) below.
+gent also tracks projects, tasks, bugs, comments, changelog entries, and memories in a SQLite-backed registry under `.gent` — see [Project tracking](#project-tracking) below.
 
 ## Configuration
 
@@ -228,7 +228,7 @@ Each entry under `skills:` references a directory inside `<gent-dir>/skills/`. `
 
 ## Project tracking
 
-Alongside profiles, gent tracks projects and their tasks, bugs, comments, changelog entries, and memories in a SQLite-backed registry — separate from the YAML-based `.gent` profile config (see [`docs/state.md`](docs/state.md) for how the two dotdirs divide responsibilities).
+Alongside profiles, gent tracks projects and their tasks, bugs, comments, changelog entries, and memories in a SQLite-backed registry that lives under the same `.gent` directory as profiles and MCP servers (see [`docs/state.md`](docs/state.md) for how the two kinds of data divide within it).
 
 ```bash
 # Register the current directory as a project

@@ -26,7 +26,7 @@ describe('resolveProject', () => {
     const db = openDatabase(join(dir, 'projects.db'));
     migrateGlobalDb(db);
     const registry = new ProjectRegistryRepository(db);
-    const project = registry.create({ name: 'demo', rootPath: join(dir, 'demo'), dbPath: join(dir, 'demo', '.opsys', 'project.db') });
+    const project = registry.create({ name: 'demo', rootPath: join(dir, 'demo'), dbPath: join(dir, 'demo', '.gent', 'project.db') });
 
     expect(resolveProject({ registry, cwd: dir, projectRef: 'demo' })).toEqual(project);
     db.close();
@@ -38,7 +38,7 @@ describe('resolveProject', () => {
     const db = openDatabase(join(dir, 'projects.db'));
     migrateGlobalDb(db);
     const registry = new ProjectRegistryRepository(db);
-    const project = registry.create({ name: 'demo', rootPath, dbPath: join(rootPath, '.opsys', 'project.db') });
+    const project = registry.create({ name: 'demo', rootPath, dbPath: join(rootPath, '.gent', 'project.db') });
 
     expect(resolveProject({ registry, cwd: join(rootPath, 'src') })).toEqual(project);
     db.close();
@@ -49,8 +49,8 @@ describe('resolveProject', () => {
     const db = openDatabase(join(dir, 'projects.db'));
     migrateGlobalDb(db);
     const registry = new ProjectRegistryRepository(db);
-    registry.create({ name: 'parent', rootPath: join(dir, 'repo'), dbPath: join(dir, 'repo', '.opsys', 'project.db') });
-    registry.create({ name: 'child', rootPath: join(dir, 'repo', 'packages', 'child'), dbPath: join(dir, 'repo', 'packages', 'child', '.opsys', 'project.db') });
+    registry.create({ name: 'parent', rootPath: join(dir, 'repo'), dbPath: join(dir, 'repo', '.gent', 'project.db') });
+    registry.create({ name: 'child', rootPath: join(dir, 'repo', 'packages', 'child'), dbPath: join(dir, 'repo', 'packages', 'child', '.gent', 'project.db') });
 
     expect(() => resolveProject({ registry, cwd: join(dir, 'repo', 'packages', 'child', 'src') })).toThrow('Ambiguous project; pass --project <name-or-id>');
     db.close();
