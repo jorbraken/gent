@@ -1,7 +1,7 @@
 {
   "name": "gent",
   "version": "0.1.0",
-  "description": "Coding-agent environment profile manager for Claude Code and Pi",
+  "description": "Coding-agent environment profile manager for Claude Code, Pi, and Codex",
   "license": "MIT",
   "author": "jorbraken",
   "repository": {

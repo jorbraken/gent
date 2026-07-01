@@ -213,10 +213,98 @@ describe("claude adapter buildArgs", () => {
   });
 });
 
+// ─── codex adapter ───────────────────────────────────────────────────────────
+
+describe("codex adapter buildArgs", () => {
+  it("passes the gent profile name to codex --profile", async () => {
+    const codex = (await adapters()).getAdapter("codex");
+    const profile: Profile = { name: "dev", agent: "codex" };
+    expect(codex.buildArgs(profile, emptyConfig, null)).toEqual(["--profile", "dev"]);
+  });
+
+  it("allows settings.codexProfile to override the codex profile name", async () => {
+    const codex = (await adapters()).getAdapter("codex");
+    const profile: Profile = {
+      name: "dev+qa",
+      agent: "codex",
+      settings: { codexProfile: "deep-review" },
+    };
+    expect(codex.buildArgs(profile, emptyConfig, null)).toEqual([
+      "--profile",
+      "deep-review",
+    ]);
+  });
+
+  it("maps model and effort settings to codex flags", async () => {
+    const codex = (await adapters()).getAdapter("codex");
+    const profile: Profile = {
+      name: "p",
+      agent: "codex",
+      settings: { model: "gpt-5.5", effortLevel: "high" },
+    };
+    expect(codex.buildArgs(profile, emptyConfig, null)).toEqual([
+      "--profile",
+      "p",
+      "--model",
+      "gpt-5.5",
+      "--config",
+      'model_reasoning_effort="high"',
+    ]);
+  });
+
+  it("maps codex approval and sandbox settings", async () => {
+    const codex = (await adapters()).getAdapter("codex");
+    const profile: Profile = {
+      name: "p",
+      agent: "codex",
+      settings: { approvalPolicy: "on-request", sandboxMode: "workspace-write" },
+    };
+    expect(codex.buildArgs(profile, emptyConfig, null)).toEqual([
+      "--profile",
+      "p",
+      "--ask-for-approval",
+      "on-request",
+      "--sandbox",
+      "workspace-write",
+    ]);
+  });
+
+  it("warns and skips gent-only profile fields", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const codex = (await adapters()).getAdapter("codex");
+    const profile: Profile = {
+      name: "p",
+      agent: "codex",
+      mcp: ["github"],
+      strict_mcp: true,
+      skills: ["a"],
+      system_prompt_append: "be concise",
+      settings: { permissionMode: "auto" },
+    };
+    expect(codex.buildArgs(profile, configWithGithub, null)).toEqual(["--profile", "p"]);
+    expect(warn).toHaveBeenCalledTimes(5);
+    warn.mockRestore();
+  });
+
+  it("warns and skips invalid codex profile names", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const codex = (await adapters()).getAdapter("codex");
+    const profile: Profile = { name: "dev+qa", agent: "codex" };
+    expect(codex.buildArgs(profile, emptyConfig, null)).toEqual([]);
+    expect(warn).toHaveBeenCalledOnce();
+    warn.mockRestore();
+  });
+});
+
 describe("getAdapter", () => {
   it("defaults to claude", async () => {
     const { getAdapter } = await adapters();
     expect(getAdapter().binary).toBe("claude");
     expect(getAdapter(undefined).binary).toBe("claude");
+  });
+
+  it("resolves codex", async () => {
+    const { getAdapter } = await adapters();
+    expect(getAdapter("codex").binary).toBe("codex");
   });
 });

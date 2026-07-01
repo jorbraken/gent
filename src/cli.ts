@@ -38,7 +38,7 @@ const program = new Command();
 
 program
   .name("gent")
-  .description("Coding-agent environment profile manager for Claude Code and Pi")
+  .description("Coding-agent environment profile manager for Claude Code, Pi, and Codex")
   .version("0.1.0")
   .argument("[profile]", "profile name(s) to activate — comma-separate to compose (e.g. dev,qa)")
   .option("--dry-run", "print the composed agent command without running it")
@@ -202,10 +202,24 @@ profileCmd
     if (p.strict_mcp) row("strict_mcp", "true");
     if (p.skills?.length) row("skills", p.skills.join(", "));
     if (p.settings) {
-      const KNOWN = new Set(["model", "permissionMode", "effortLevel"]);
+      const KNOWN = new Set([
+        "model",
+        "permissionMode",
+        "effortLevel",
+        "codexProfile",
+        "approvalPolicy",
+        "sandboxMode",
+        "modelVerbosity",
+        "personality",
+      ]);
       if (p.settings.model) row("model", String(p.settings.model));
       if (p.settings.permissionMode) row("permission", String(p.settings.permissionMode));
       if (p.settings.effortLevel) row("effort", String(p.settings.effortLevel));
+      if (p.settings.codexProfile) row("codexProfile", String(p.settings.codexProfile));
+      if (p.settings.approvalPolicy) row("approval", String(p.settings.approvalPolicy));
+      if (p.settings.sandboxMode) row("sandbox", String(p.settings.sandboxMode));
+      if (p.settings.modelVerbosity) row("verbosity", String(p.settings.modelVerbosity));
+      if (p.settings.personality) row("personality", String(p.settings.personality));
       for (const [k, v] of Object.entries(p.settings)) {
         if (!KNOWN.has(k) && v !== undefined) row(k, String(v));
       }

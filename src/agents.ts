@@ -9,7 +9,7 @@ import {
 } from "./config.js";
 import { type Profile } from "./profiles.js";
 
-export type AgentName = "claude" | "pi";
+export type AgentName = "claude" | "pi" | "codex";
 
 export interface WizardChoice {
   value: string;
@@ -53,6 +53,11 @@ interface SettingsJson {
   model?: string;
   permissionMode?: string;
   effortLevel?: string;
+  codexProfile?: string;
+  approvalPolicy?: string;
+  sandboxMode?: string;
+  modelVerbosity?: string;
+  personality?: string;
   [key: string]: unknown;
 }
 
@@ -215,6 +220,23 @@ const PI_THINKING: WizardChoice[] = [
   { value: "xhigh", name: "Extra high — maximum thinking" },
 ];
 
+const CODEX_MODELS: WizardChoice[] = [
+  { value: "", name: "Default (use codex's default)" },
+  { value: "gpt-5.5", name: "GPT-5.5 — strongest for coding" },
+  { value: "gpt-5.4-mini", name: "GPT-5.4 mini — faster / lower cost" },
+  { value: "gpt-5.3-codex-spark", name: "GPT-5.3 Codex Spark — fastest iteration" },
+  { value: "__custom__", name: "Custom model ID..." },
+];
+
+const CODEX_EFFORT: WizardChoice[] = [
+  { value: "", name: "Default (use codex's default)" },
+  { value: "minimal", name: "Minimal — fastest" },
+  { value: "low", name: "Low" },
+  { value: "medium", name: "Medium — balanced reasoning" },
+  { value: "high", name: "High" },
+  { value: "xhigh", name: "Extra high — maximum reasoning" },
+];
+
 // ---------------------------------------------------------------------------
 // Claude adapter — the original gent behaviour
 // ---------------------------------------------------------------------------
@@ -363,12 +385,120 @@ const piAdapter: AgentAdapter = {
 };
 
 // ---------------------------------------------------------------------------
+// Codex adapter — selects a Codex config profile and maps documented CLI flags
+// ---------------------------------------------------------------------------
+
+const CODEX_PROFILE_NAME = /^[a-zA-Z0-9_-]+$/;
+
+function codexProfileName(profile: Profile): string {
+  const configured = profile.settings?.codexProfile;
+  return typeof configured === "string" && configured.trim()
+    ? configured.trim()
+    : profile.name;
+}
+
+function warnUnsupportedCodexFeature(message: string): void {
+  console.warn(chalk.yellow(`Warning: ${message}`));
+}
+
+const codexAdapter: AgentAdapter = {
+  name: "codex",
+  binary: "codex",
+  label: "codex",
+  installHint: "Install it from: https://developers.openai.com/codex",
+  wizardModels: CODEX_MODELS,
+  wizardThinking: CODEX_EFFORT,
+  thinkingPromptLabel: "Reasoning effort:",
+  supportsMcp: false,
+  buildArgs(profile, _globalConfig, _tmpDir) {
+    const args: string[] = [];
+
+    const profileName = codexProfileName(profile);
+    if (CODEX_PROFILE_NAME.test(profileName)) {
+      args.push("--profile", profileName);
+    } else {
+      warnUnsupportedCodexFeature(
+        `codex --profile only accepts letters, numbers, hyphens, and underscores (ignored: ${profileName})`
+      );
+    }
+
+    const model = profile.settings?.model;
+    if (model) {
+      args.push("--model", String(model));
+    }
+
+    const effort = profile.settings?.effortLevel;
+    if (effort) {
+      args.push("--config", `model_reasoning_effort="${String(effort)}"`);
+    }
+
+    const approvalPolicy = profile.settings?.approvalPolicy;
+    if (approvalPolicy) {
+      args.push("--ask-for-approval", String(approvalPolicy));
+    }
+
+    const sandboxMode = profile.settings?.sandboxMode;
+    if (sandboxMode) {
+      args.push("--sandbox", String(sandboxMode));
+    }
+
+    const verbosity = profile.settings?.modelVerbosity;
+    if (verbosity) {
+      args.push("--config", `model_verbosity="${String(verbosity)}"`);
+    }
+
+    const personality = profile.settings?.personality;
+    if (personality) {
+      args.push("--config", `personality="${String(personality)}"`);
+    }
+
+    if (profile.mcp && profile.mcp.length > 0) {
+      warnUnsupportedCodexFeature(
+        `gent MCP selections are not passed directly to codex (configure them in $CODEX_HOME/${profileName}.config.toml instead: ${profile.mcp.join(", ")})`
+      );
+    }
+    if (profile.strict_mcp) {
+      warnUnsupportedCodexFeature("strict_mcp is not supported by codex (ignored)");
+    }
+    if (profile.skills && profile.skills.length > 0) {
+      warnUnsupportedCodexFeature(
+        `gent skills are not passed directly to codex (install or expose Codex skills separately: ${profile.skills.join(", ")})`
+      );
+    }
+    if (profile.system_prompt_append) {
+      warnUnsupportedCodexFeature(
+        "system_prompt_append is not passed directly to codex (use AGENTS.md, a Codex skill, or developer_instructions in the Codex profile)"
+      );
+    }
+
+    for (const [key, value] of Object.entries(profile.settings ?? {})) {
+      if (
+        key === "model" ||
+        key === "effortLevel" ||
+        key === "codexProfile" ||
+        key === "approvalPolicy" ||
+        key === "sandboxMode" ||
+        key === "modelVerbosity" ||
+        key === "personality" ||
+        value === undefined
+      ) {
+        continue;
+      }
+      warnUnsupportedCodexFeature(`settings.${key} is not supported by codex (ignored)`);
+    }
+
+    return args;
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Registry
 // ---------------------------------------------------------------------------
 
 const ADAPTERS: Record<AgentName, AgentAdapter> = {
   claude: claudeAdapter,
   pi: piAdapter,
+  codex: codexAdapter,
 };
 
 export const AGENT_NAMES = Object.keys(ADAPTERS) as AgentName[];
