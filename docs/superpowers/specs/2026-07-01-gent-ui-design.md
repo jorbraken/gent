@@ -1,4 +1,4 @@
-# Gent UI VS Code/Cursor Extension Design
+# Gent UI VS Code Extension Design
 
 Date: 2026-07-01
 Status: Approved for implementation planning
@@ -6,19 +6,19 @@ Source PRD: `docs/vscode-extension.prd.md`
 
 ## Summary
 
-Gent UI is the VS Code/Cursor extension for Gent. It provides a visual, source-aware interface for creating, editing, deleting, inspecting, and previewing Gent project files while preserving Gent's core promise: readable, versionable files remain the source of truth.
+Gent UI is the VS Code extension for Gent. It provides a visual, source-aware interface for creating, editing, deleting, inspecting, and previewing Gent project files, including sandbox definitions, while preserving Gent's core promise: readable, versionable files remain the source of truth.
 
-The first release includes full CRUD for the entities shown in the sidebar: profiles, context packs, skills, MCP servers, memories, decisions, and pipelines. Runs are shown for inspection; run artifact editing is out of scope for the first release.
+The first release includes full CRUD for the entities shown in the sidebar: profiles, context packs, skills, MCP servers, memories, decisions, sandboxes, and pipelines. Runs are shown for inspection; run artifact editing is out of scope for the first release.
 
 ## Goals
 
 - Detect and work with the active `.gent/` project configuration.
-- Provide a Gent UI sidebar with Profiles, Context Packs, Skills, MCP Servers, Memories, Decisions, Pipelines, and Runs.
+- Provide a Gent UI sidebar with Profiles, Context Packs, Skills, MCP Servers, Memories, Decisions, Sandboxes, Pipelines, and Runs.
 - Support create, edit, and delete for all editable entity types.
 - Use source-aware split editing so users can understand how visual edits map to files.
 - Preserve readable, git-friendly source files.
-- Use a shared TypeScript core for parsing, validation, templates, diagnostics, and serialization.
-- Shell out to `gent inspect` and `gent preview` for runtime-oriented operations.
+- Use a shared TypeScript core library for parsing, validation, templates, diagnostics, and serialization.
+- Shell out to `gent inspect`, `gent preview`, and sandbox lifecycle commands for runtime-oriented operations.
 - Fail safely when files contain unsupported custom structures or invalid content.
 
 ## Non-Goals
@@ -31,9 +31,9 @@ The first release includes full CRUD for the entities shown in the sidebar: prof
 
 ## Architecture
 
-Gent UI should be a VS Code/Cursor extension package in this repo, backed by a shared TypeScript core. The core owns `.gent/` discovery, entity parsing, schema validation, safe serialization, file operations, canonical templates, and diagnostics. The CLI should consume the same core where practical so CLI behavior and extension behavior stay aligned.
+Gent UI should be a VS Code extension package in this repo, backed by a shared TypeScript core library. The core library owns `.gent/` discovery, entity parsing, schema validation, safe serialization, file operations, canonical templates, and diagnostics. The CLI should consume the same core library where practical so CLI behavior and extension behavior stay aligned.
 
-The extension uses VS Code APIs for tree views, commands, custom editors or webviews, file watching, diagnostics, workspace edits, and confirmation flows. It shells out to `gent inspect`, `gent preview`, and future runtime commands when the desired behavior is execution-oriented rather than local editing.
+The extension uses VS Code APIs for tree views, commands, custom editors or webviews, file watching, diagnostics, workspace edits, and confirmation flows. It shells out to `gent inspect`, `gent preview`, and future runtime/sandbox commands when the desired behavior is execution-oriented rather than local editing.
 
 This split keeps Gent UI faithful to CLI semantics while enabling responsive visual editing and live validation.
 
@@ -51,6 +51,7 @@ Sidebar structure:
 ```text
 Gent
 ├── Profiles
+├── Sandboxes
 ├── Context Packs
 ├── Skills
 ├── MCP Servers
@@ -68,7 +69,22 @@ If an existing file contains custom structure that cannot safely round-trip thro
 
 ### Profiles
 
-Profiles expose structured fields for role, purpose, when-to-use guidance, included/excluded context packs, included/excluded skills, memory scopes, allowed/blocked tools, allowed/blocked MCP servers, output expectations, and writeback behavior.
+Profiles expose structured fields for role, purpose, when-to-use guidance, sandbox selection, included/excluded context packs, included/excluded skills, memory scopes, allowed/blocked tools, allowed/blocked MCP servers, output expectations, and writeback behavior. The sandbox selection edits the profile's `sandbox` field and validates that the referenced `.gent/sandboxes/<id>.yaml` definition exists.
+
+### Sandboxes
+
+Sandboxes define where and how an agent executes. They are first-class editable entities backed by `.gent/sandboxes/<id>.yaml`. Gent UI v1 supports the currently implemented drivers: `local` for no-isolation host execution and `apple-container` for Apple Container microVM-style isolation. Podman and Docker are future driver options, not v1 UI requirements.
+
+The sandbox editor is organized into:
+
+- General: id, name, driver, lifecycle.
+- Runtime: image and workdir.
+- Filesystem: mounts with source, target, and `ro`/`rw` mode.
+- Environment: key/value environment variables.
+- Networking: `none` or `full`.
+- Lifecycle actions: validate, run, logs, stop, destroy.
+
+Sandbox lifecycle state is operational state surfaced from CLI command output. Gent UI must not create extension-only sandbox state.
 
 ### Context Packs
 
@@ -105,9 +121,9 @@ Runs are read-only in v1. Gent UI should list runs, show metadata and artifacts,
 Responsibilities:
 
 - Discover active `.gent/` directories and the current config inheritance model.
-- Load profiles, context packs, skills, MCP config, memories, decisions, pipelines, and runs.
+- Load profiles, sandboxes, context packs, skills, MCP config, memories, decisions, pipelines, and runs.
 - Parse YAML, markdown frontmatter, markdown bodies, and folder-backed packages.
-- Validate schemas, references, IDs, paths, and duplicate definitions.
+- Validate schemas, references, IDs, paths, duplicate definitions, profile sandbox references, and driver-specific sandbox fields.
 - Produce diagnostics with stable codes and source ranges when the parser can map an issue to a file location.
 - Provide canonical templates for creation.
 - Serialize canonical updates.
@@ -120,7 +136,7 @@ Responsibilities:
 - Register commands, tree views, custom editors/webviews, diagnostics, and file watchers.
 - Own prompts for create, delete, preserve custom source, and canonicalize decisions.
 - Bridge VS Code document lifecycle with shared core operations.
-- Execute CLI commands for inspect and preview.
+- Execute CLI commands for inspect, preview, and sandbox lifecycle actions.
 
 ### Entity Tree Provider
 
@@ -128,7 +144,7 @@ Responsibilities:
 
 - Group all Gent entities by type.
 - Show validation or warning badges for entities with current diagnostics.
-- Support create, open, reveal source, delete, refresh, and preview-related actions.
+- Support create, open, reveal source, delete, refresh, preview-related actions, and sandbox lifecycle actions.
 
 ### Split Visual Editors
 
@@ -194,6 +210,16 @@ User selects profile and optional input
 → Detected or structured file paths can be opened from the preview
 ```
 
+### Sandbox Lifecycle Actions
+
+```text
+User selects a sandbox lifecycle action
+→ Extension confirms destructive actions such as destroy
+→ Extension shells out to gent sandbox <name> validate|run|logs|stop|destroy
+→ Output is rendered in the sandbox editor or an output panel
+→ Tree badges and diagnostics refresh from current files and command results
+```
+
 ### Create
 
 ```text
@@ -227,19 +253,21 @@ Show diagnostics and inline warnings for:
 - Invalid paths or IDs.
 - Failed file operations.
 - Failed CLI commands.
+- Invalid sandbox driver fields.
+- Missing sandbox runtime dependencies, such as the Apple `container` binary.
 
 Visual save must be blocked when it would silently discard source content. Canonical conversion must require confirmation and should show a diff or summary before applying.
 
-For failed CLI commands, Gent UI should show the command, working directory, exit code, stdout, stderr, and actions to retry, copy details, or open a terminal.
+For failed CLI commands, Gent UI should show the command, working directory, exit code, stdout, stderr, and actions to retry, copy details, or open a terminal. Sandbox lifecycle failures should preserve the exact CLI output so users can troubleshoot runtime availability, missing images, mount problems, and permission issues.
 
 ## Testing Strategy
 
 Shared core tests:
 
-- Parse, validate, and serialize every entity type.
-- Detect duplicate IDs and missing references.
+- Parse, validate, and serialize every entity type, including `.gent/sandboxes/<id>.yaml`.
+- Detect duplicate IDs, missing references, and profiles that reference nonexistent sandboxes.
 - Preserve or explicitly flag custom source structures.
-- Generate canonical templates.
+- Generate canonical templates, including `local` and `apple-container` sandbox templates.
 - Validate round-trip behavior and canonicalization decisions.
 
 Extension tests:
@@ -249,7 +277,7 @@ Extension tests:
 - Save visual editor changes through mocked VS Code workspace APIs.
 - Block unsafe visual saves.
 - Confirm delete/canonicalize flows.
-- Handle `gent inspect` and `gent preview` success and failure.
+- Handle `gent inspect`, `gent preview`, and `gent sandbox <name> validate|run|logs|stop|destroy` success and failure.
 
 End-to-end smoke tests should run in an extension host if the project setup supports it.
 
@@ -257,7 +285,7 @@ End-to-end smoke tests should run in an extension host if the project setup supp
 
 - Prefer a refactor toward a shared core before duplicating schema logic in the extension.
 - Keep generated files readable and git-friendly.
-- Keep CLI execution separate from local editing concerns.
+- Keep CLI execution and sandbox lifecycle operations separate from local editing concerns.
 - Prefer structured CLI output for `inspect` and `preview` when the CLI supports it; fall back to safe text rendering.
 - Do not commit `.superpowers/` visual brainstorming artifacts.
 
@@ -265,6 +293,7 @@ End-to-end smoke tests should run in an extension host if the project setup supp
 
 - Extension name: Gent UI.
 - First release scope: create, edit, and delete for all sidebar entity types except runs, which are read-only.
+- Sandbox support: sandboxes are first-class editable entities; profiles can reference one sandbox; v1 UI supports `local` and `apple-container` drivers.
 - Primary editing model: source-aware split editing.
 - Unsafe round-trip behavior: ask the user whether to preserve custom source or convert to canonical format.
 - CLI integration: shared TypeScript core for parsing and validation; shell out to CLI for inspect, preview, and runtime-oriented operations.
