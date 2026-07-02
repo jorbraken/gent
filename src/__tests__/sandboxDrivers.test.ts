@@ -12,6 +12,9 @@ import {
   buildRemoveArgs,
   buildLogsArgs,
   buildImageInspectArgs,
+  DRIVER_NAMES,
+  isDriverName,
+  getDriver,
 } from "../sandboxDrivers.js";
 
 const localSandbox: Sandbox = {
@@ -184,5 +187,22 @@ describe("appleContainerDriver", () => {
     await appleContainerDriver.logs(sandbox);
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("ephemeral container has already exited"));
     logSpy.mockRestore();
+  });
+});
+
+describe("driver registry", () => {
+  it("DRIVER_NAMES lists local and apple-container", () => {
+    expect(DRIVER_NAMES).toEqual(["local", "apple-container"]);
+  });
+
+  it("isDriverName accepts known drivers and rejects unknown ones", () => {
+    expect(isDriverName("local")).toBe(true);
+    expect(isDriverName("apple-container")).toBe(true);
+    expect(isDriverName("podman")).toBe(false);
+  });
+
+  it("getDriver returns the matching driver implementation", () => {
+    expect(getDriver("local").name).toBe("local");
+    expect(getDriver("apple-container").name).toBe("apple-container");
   });
 });

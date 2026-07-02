@@ -220,3 +220,22 @@ export const appleContainerDriver: SandboxDriver = {
     spawnSync("container", buildLogsArgs(sandbox), { stdio: "inherit" });
   },
 };
+
+// ---------------------------------------------------------------------------
+// Registry
+// ---------------------------------------------------------------------------
+
+const DRIVERS: Record<SandboxDriverName, SandboxDriver> = {
+  local: localDriver,
+  "apple-container": appleContainerDriver,
+};
+
+export const DRIVER_NAMES = Object.keys(DRIVERS) as SandboxDriverName[];
+
+export function isDriverName(value: string): value is SandboxDriverName {
+  return value in DRIVERS;
+}
+
+export function getDriver(name: SandboxDriverName): SandboxDriver {
+  return DRIVERS[name];
+}
