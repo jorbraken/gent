@@ -60,12 +60,13 @@ program
   .argument("[profile]", "profile name(s) to activate — comma-separate to compose (e.g. dev,qa)")
   .option("--dry-run", "print the composed agent command without running it")
   .option("--agent <name>", `agent to run: ${AGENT_NAMES.join(" or ")} (overrides the profile)`)
+  .option("--no-sandbox", "run locally even if the profile specifies a sandbox")
   .allowUnknownOption()
-  .action(async (profileArg: string | undefined, options: { dryRun?: boolean; agent?: string }) => {
+  .action(async (profileArg: string | undefined, options: { dryRun?: boolean; agent?: string; sandbox: boolean }) => {
     const rawArgs = program.args.slice(profileArg ? 1 : 0);
     const extraArgs: string[] = [];
     for (let i = 0; i < rawArgs.length; i++) {
-      if (rawArgs[i] === "--dry-run") continue;
+      if (rawArgs[i] === "--dry-run" || rawArgs[i] === "--no-sandbox") continue;
       if (rawArgs[i] === "--agent") {
         i++; // skip the value too
         continue;
@@ -95,7 +96,7 @@ program
       profile = { ...profile, agent: options.agent };
     }
 
-    run(profile, extraArgs, options.dryRun ?? false);
+    await run(profile, extraArgs, options.dryRun ?? false, options.sandbox === false);
   });
 
 // gent init

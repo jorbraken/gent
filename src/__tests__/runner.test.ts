@@ -96,3 +96,61 @@ describe("buildSettings", () => {
     expect(result?.customKey).toBe("custom-value");
   });
 });
+
+// ─── runInSandbox ────────────────────────────────────────────────────────────
+
+import { runInSandbox } from "../runner.js";
+import type { Sandbox } from "../sandboxes.js";
+import type { SandboxDriver } from "../sandboxDrivers.js";
+
+function fakeDriver(overrides: Partial<SandboxDriver> = {}): SandboxDriver {
+  return {
+    name: "local",
+    validate: vi.fn().mockResolvedValue([]),
+    ensureRunning: vi.fn().mockResolvedValue(undefined),
+    exec: vi.fn().mockResolvedValue(0),
+    stop: vi.fn().mockResolvedValue(undefined),
+    destroy: vi.fn().mockResolvedValue(undefined),
+    logs: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
+
+describe("runInSandbox", () => {
+  it("calls ensureRunning then exec with the adapter binary and args", async () => {
+    const driver = fakeDriver({ exec: vi.fn().mockResolvedValue(0) });
+    const sandbox: Sandbox = { id: "dev", driver: "local", lifecycle: "ephemeral" };
+    const code = await runInSandbox(driver, sandbox, "claude", ["--settings", "{}"], "/tmp/runs/dev");
+    expect(driver.ensureRunning).toHaveBeenCalledWith(sandbox, "/tmp/runs/dev");
+    expect(driver.exec).toHaveBeenCalledWith(sandbox, "claude", ["--settings", "{}"], "/tmp/runs/dev");
+    expect(code).toBe(0);
+  });
+
+  it("destroys the sandbox after exec when lifecycle is ephemeral", async () => {
+    const driver = fakeDriver();
+    const sandbox: Sandbox = { id: "dev", driver: "local", lifecycle: "ephemeral" };
+    await runInSandbox(driver, sandbox, "claude", [], "/tmp/runs/dev");
+    expect(driver.destroy).toHaveBeenCalledWith(sandbox);
+  });
+
+  it("does not destroy the sandbox after exec when lifecycle is persistent", async () => {
+    const driver = fakeDriver();
+    const sandbox: Sandbox = { id: "dev", driver: "local", lifecycle: "persistent" };
+    await runInSandbox(driver, sandbox, "claude", [], "/tmp/runs/dev");
+    expect(driver.destroy).not.toHaveBeenCalled();
+  });
+
+  it("treats an unset lifecycle as ephemeral (destroys after exec)", async () => {
+    const driver = fakeDriver();
+    const sandbox: Sandbox = { id: "dev", driver: "local" };
+    await runInSandbox(driver, sandbox, "claude", [], "/tmp/runs/dev");
+    expect(driver.destroy).toHaveBeenCalledWith(sandbox);
+  });
+
+  it("propagates the exit code from exec", async () => {
+    const driver = fakeDriver({ exec: vi.fn().mockResolvedValue(7) });
+    const sandbox: Sandbox = { id: "dev", driver: "local" };
+    const code = await runInSandbox(driver, sandbox, "claude", [], "/tmp/runs/dev");
+    expect(code).toBe(7);
+  });
+});
