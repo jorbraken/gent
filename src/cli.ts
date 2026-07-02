@@ -272,6 +272,7 @@ showCmd
     }
     if (p.mcp?.length) row("mcp", p.mcp.join(", "));
     if (p.strict_mcp) row("strict_mcp", "true");
+    if (p.sandbox) row("sandbox", chalk.cyan(p.sandbox));
     if (p.skills?.length) row("skills", p.skills.join(", "));
     if (p.settings) {
       const KNOWN = new Set([

@@ -303,6 +303,22 @@ describe("saveProfile → loadProfile round-trip", () => {
   });
 });
 
+// ─── sandbox field ───────────────────────────────────────────────────────────
+
+describe("profile.sandbox field", () => {
+  it("round-trips through save/load", async () => {
+    const { saveProfile, loadProfile } = await fresh();
+    saveProfile({ name: "coding", sandbox: "dev" });
+    expect(loadProfile("coding").sandbox).toBe("dev");
+  });
+
+  it("is undefined when not set", async () => {
+    const { saveProfile, loadProfile } = await fresh();
+    saveProfile({ name: "coding" });
+    expect(loadProfile("coding").sandbox).toBeUndefined();
+  });
+});
+
 // ─── listProfiles ─────────────────────────────────────────────────────────────
 
 describe("listProfiles", () => {

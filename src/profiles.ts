@@ -27,6 +27,7 @@ export interface Profile {
   strict_mcp?: boolean;
   settings?: ProfileSettings;
   system_prompt_append?: string;
+  sandbox?: string;
 }
 
 const VALID_NAME = /^[a-zA-Z0-9_-]+$/;
