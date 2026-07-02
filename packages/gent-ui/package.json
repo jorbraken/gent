@@ -23,7 +23,10 @@
     },
     "commands": [
       { "command": "gent.refresh", "title": "Gent: Refresh" },
-      { "command": "gent.openEntity", "title": "Gent: Open Entity" }
+      { "command": "gent.openEntity", "title": "Gent: Open Entity" },
+      { "command": "gent.createEntity", "title": "Gent: Create Entity" },
+      { "command": "gent.deleteEntity", "title": "Gent: Delete Entity" },
+      { "command": "gent.revealSource", "title": "Gent: Reveal Source" }
     ]
   },
   "scripts": {
