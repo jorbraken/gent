@@ -1,0 +1,44 @@
+{
+  "name": "gent-ui",
+  "displayName": "Gent UI",
+  "description": "Visual source-aware editor for Gent profiles, sandboxes, context, skills, memories, decisions, and pipelines.",
+  "version": "0.1.0",
+  "publisher": "gent",
+  "private": true,
+  "type": "module",
+  "main": "./dist/extension.js",
+  "engines": { "vscode": "^1.95.0" },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished", "onCommand:gent.refresh"],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        { "id": "gent", "title": "Gent", "icon": "resources/gent.svg" }
+      ]
+    },
+    "views": {
+      "gent": [
+        { "id": "gent.entities", "name": "Gent" }
+      ]
+    },
+    "commands": [
+      { "command": "gent.refresh", "title": "Gent: Refresh" }
+    ]
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.95.0",
+    "@vscode/test-electron": "^2.5.2",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^4.1.9"
+  }
+}

@@ -20,12 +20,15 @@
     "gent": "./dist/cli.js"
   },
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && pnpm --filter gent-ui build",
+    "build:cli": "tsup",
+    "build:extension": "pnpm --filter gent-ui build",
     "global": "pnpm build && npm link",
     "dev": "tsx src/cli.ts",
     "test": "vitest run",
+    "test:extension": "pnpm --filter gent-ui test",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && pnpm --filter gent-ui typecheck"
   },
   "dependencies": {
     "@inquirer/prompts": "^7.5.2",
