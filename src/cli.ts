@@ -50,6 +50,7 @@ import { registerShow } from "./commands/show.js";
 import { registerUpdate } from "./commands/update.js";
 import { registerDelete } from "./commands/delete.js";
 import { registerDone } from "./commands/done.js";
+import { registerSandboxLifecycle } from "./commands/sandboxLifecycle.js";
 
 const program = new Command();
 
@@ -62,6 +63,7 @@ const showCmd = registerShow(program);
 const updateCmd = registerUpdate(program);
 const deleteCmd = registerDelete(program);
 registerDone(program);
+registerSandboxLifecycle(program);
 
 program
   .name("gent")
