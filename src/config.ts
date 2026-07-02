@@ -203,11 +203,18 @@ const DEFAULT_CONFIG: GentConfig = {
   mcp_servers: {},
 };
 
+// Create a .gent dir (and its subdirs) at an arbitrary path, bypassing the
+// frozen GENT_DIR. Used by `gent init` to bootstrap a project-local .gent/
+// even when GENT_DIR resolved to an ancestor or the global dir.
+export function ensureGentDirAt(dir: string): void {
+  fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(path.join(dir, "profiles"), { recursive: true });
+  fs.mkdirSync(path.join(dir, "skills"), { recursive: true });
+  fs.mkdirSync(path.join(dir, "sandboxes"), { recursive: true });
+}
+
 export function ensureGentDir(): void {
-  fs.mkdirSync(GENT_DIR, { recursive: true });
-  fs.mkdirSync(PROFILES_DIR, { recursive: true });
-  fs.mkdirSync(SKILLS_DIR, { recursive: true });
-  fs.mkdirSync(SANDBOXES_DIR, { recursive: true });
+  ensureGentDirAt(GENT_DIR);
 }
 
 export function listSkills(): string[] {
@@ -241,12 +248,17 @@ function readConfigFile(cfgPath: string): GentConfig | null {
 
 const configCache = new Map<string, GentConfig>();
 
+// Same as loadLocalConfig, but for an arbitrary .gent dir instead of GENT_DIR.
+export function loadLocalConfigAt(dir: string): GentConfig {
+  const raw = readConfigFile(path.join(dir, "config.yaml"));
+  if (!raw) return { ...DEFAULT_CONFIG };
+  return { ...raw, mcp_servers: { ...(raw.mcp_servers ?? {}) } };
+}
+
 // The project-local config only — the file that writes target. Use this when
 // adding/removing MCP servers so inherited (~/.gent) entries aren't copied in.
 export function loadLocalConfig(): GentConfig {
-  const raw = readConfigFile(CONFIG_PATH);
-  if (!raw) return { ...DEFAULT_CONFIG };
-  return { ...raw, mcp_servers: { ...(raw.mcp_servers ?? {}) } };
+  return loadLocalConfigAt(GENT_DIR);
 }
 
 // The effective config used at runtime: inherited .gent dirs merged underneath
@@ -261,10 +273,16 @@ export function loadConfig(): GentConfig {
   return { mcp_servers };
 }
 
+// Same as saveConfig, but for an arbitrary .gent dir instead of GENT_DIR.
+export function saveConfigAt(dir: string, config: GentConfig): void {
+  ensureGentDirAt(dir);
+  const cfgPath = path.join(dir, "config.yaml");
+  fs.writeFileSync(cfgPath, yaml.dump(config), "utf8");
+  configCache.delete(cfgPath);
+}
+
 export function saveConfig(config: GentConfig): void {
-  ensureGentDir();
-  fs.writeFileSync(CONFIG_PATH, yaml.dump(config), "utf8");
-  configCache.delete(CONFIG_PATH);
+  saveConfigAt(GENT_DIR, config);
 }
 
 export function interpolateEnv(value: string): string {

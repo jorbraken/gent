@@ -100,27 +100,62 @@ async function customizeProfile(profile: Profile): Promise<Profile> {
 
 export async function initWizard(): Promise<void> {
   console.log(chalk.bold("\nWelcome to gent!\n"));
-  console.log(
-    `This wizard will set up ${displayGentDir()} with an initial config.\n`
-  );
 
-  const { saveConfig, loadConfig, ensureGentDir, configExists } = await import(
-    "./config.js"
-  );
-  const { saveProfile, profileExists } = await import("./profiles.js");
+  const fs = await import("fs");
+  const path = await import("path");
+  const { GENT_DIR, GLOBAL_GENT_DIR, ensureGentDirAt, saveConfigAt, loadLocalConfigAt } =
+    await import("./config.js");
+  const { saveProfileAt } = await import("./profiles.js");
+  const { registerScaffold } = await import("./scaffolds.js");
 
-  ensureGentDir();
+  // `gent init` must always create (or reuse) the .gent/ folder in the
+  // current directory — never walk up and reuse an ancestor's .gent, which
+  // is what GENT_DIR resolves to when no local .gent exists yet.
+  const localDir = path.join(process.cwd(), ".gent");
+  const localExists = fs.existsSync(localDir);
 
-  if (configExists()) {
-    const overwrite = await confirm({
-      message:
-        `${displayGentDir()}/config.yaml already exists. Continue and add to it?`,
-      default: true,
+  if (!localExists) {
+    console.log(
+      `This wizard will create ${displayGentDir(localDir)} in the current directory.\n`
+    );
+
+    let extendsTarget: string | undefined;
+    if (GENT_DIR !== localDir) {
+      // GENT_DIR fell back to an ancestor project's .gent or the global ~/.gent.
+      const label =
+        GENT_DIR === GLOBAL_GENT_DIR
+          ? "the global ~/.gent"
+          : `the parent profile at ${displayGentDir(GENT_DIR)}`;
+      const extend = await confirm({
+        message: `Extend ${label}? Profiles, skills, and MCP servers will be inherited.`,
+        default: true,
+      });
+      if (extend) extendsTarget = GENT_DIR;
+    }
+
+    ensureGentDirAt(localDir);
+    saveConfigAt(localDir, {
+      mcp_servers: {},
+      ...(extendsTarget
+        ? GENT_DIR === GLOBAL_GENT_DIR
+          ? { extend_global: true }
+          : { extends: extendsTarget }
+        : {}),
     });
-    if (!overwrite) return;
+    registerScaffold(localDir);
+    console.log(chalk.green(`Created ${displayGentDir(localDir)}\n`));
+  } else {
+    console.log(
+      `This wizard will set up ${displayGentDir(localDir)} with an initial config.\n`
+    );
+    if (fs.existsSync(path.join(localDir, "config.yaml"))) {
+      const overwrite = await confirm({
+        message: `${displayGentDir(localDir)}/config.yaml already exists. Continue and add to it?`,
+        default: true,
+      });
+      if (!overwrite) return;
+    }
   }
-
-  const config = loadConfig();
 
   const addMcp = await confirm({
     message: "Add an MCP server now?",
@@ -128,8 +163,7 @@ export async function initWizard(): Promise<void> {
   });
 
   if (addMcp) {
-    await addMcpServerWizard(config.mcp_servers);
-    saveConfig(config);
+    await addMcpServerWizard(localDir);
   }
 
   const createProfile = await confirm({
@@ -138,8 +172,9 @@ export async function initWizard(): Promise<void> {
   });
 
   if (createProfile) {
+    const config = loadLocalConfigAt(localDir);
     const profile = await profileWizard(config.mcp_servers);
-    saveProfile(profile);
+    saveProfileAt(localDir, profile);
     console.log(
       chalk.green(`\nProfile "${profile.name}" created! Run: gent ${profile.name}`)
     );
@@ -150,10 +185,11 @@ export async function initWizard(): Promise<void> {
   }
 }
 
-export async function addMcpServerWizard(
-  registry: Record<string, unknown>
-): Promise<void> {
-  const { saveConfig, loadLocalConfig: loadConfig } = await import("./config.js");
+export async function addMcpServerWizard(targetDir: string): Promise<void> {
+  const { saveConfigAt, loadLocalConfigAt } = await import("./config.js");
+  const saveConfig = (config: import("./config.js").GentConfig) =>
+    saveConfigAt(targetDir, config);
+  const loadConfig = () => loadLocalConfigAt(targetDir);
 
   const name = await input({ message: "Server name (e.g. github):" });
   const type = await select({

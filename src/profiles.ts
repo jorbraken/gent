@@ -7,6 +7,7 @@ import {
   gentDirChain,
   resolveProfilePath,
   ensureGentDir,
+  ensureGentDirAt,
 } from "./config.js";
 import { type AgentName } from "./agents.js";
 import { profileSchema, formatZodError } from "./schemas.js";
@@ -116,6 +117,21 @@ export function loadProfile(name: string, seen = new Set<string>()): Profile {
 
   profileCache.set(p, profile);
   return profile;
+}
+
+// Same as saveProfile, but writes into an arbitrary .gent dir instead of
+// the project-local PROFILES_DIR. Used by `gent init` when bootstrapping a
+// fresh .gent/ that GENT_DIR hasn't picked up yet in this process.
+export function saveProfileAt(dir: string, profile: Profile): void {
+  validateProfileName(profile.name);
+  const parsed = profileSchema.safeParse(profile);
+  if (!parsed.success) {
+    throw new Error(`Invalid profile "${profile.name}": ${formatZodError(parsed.error)}`);
+  }
+  ensureGentDirAt(dir);
+  const p = path.join(dir, "profiles", `${profile.name}.yaml`);
+  fs.writeFileSync(p, yaml.dump(profile), "utf8");
+  profileCache.delete(p);
 }
 
 export function saveProfile(profile: Profile): void {

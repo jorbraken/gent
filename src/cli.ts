@@ -20,6 +20,7 @@ import {
   displayGentDir,
   parentDirs,
   GLOBAL_GENT_DIR,
+  GENT_DIR,
   CONFIG_PATH,
   PROFILES_DIR,
 } from "./config.js";
@@ -357,8 +358,7 @@ addCmd
   .description("Register a new MCP server")
   .action(async () => {
     ensureGentDir();
-    const config = loadConfig();
-    await addMcpServerWizard(config.mcp_servers);
+    await addMcpServerWizard(GENT_DIR);
   });
 
 // gent show profile <name>
