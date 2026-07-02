@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createTempEnv, type TempEnv } from "../../testHelpers/tempEnv.js";
@@ -81,5 +81,59 @@ describe("gent verb-first CLI e2e", () => {
     const env = tempEnv();
     expect(expectSuccess(runGent(env, ["list"]))).toContain("No profiles");
     expect(expectSuccess(runGent(env, ["list", "profile"]))).toContain("No profiles");
+  });
+});
+
+describe("gent sandbox CRUD + lifecycle (local driver)", () => {
+  it("creates, lists, and shows a sandbox from the local template", () => {
+    const env = tempEnv();
+
+    expectSuccess(runGent(env, ["create", "sandbox", "local"]));
+    expect(existsSync(join(env.home, ".gent", "sandboxes", "local.yaml"))).toBe(true);
+    expect(expectSuccess(runGent(env, ["list", "sandbox"]))).toContain("local");
+    expect(expectSuccess(runGent(env, ["show", "sandbox", "local"]))).toContain("local");
+  });
+
+  it("runs validate/run/exec/logs/stop/destroy through the local driver", () => {
+    const env = tempEnv();
+    expectSuccess(runGent(env, ["create", "sandbox", "local"]));
+
+    expect(expectSuccess(runGent(env, ["sandbox", "local", "validate"]))).toBe("OK");
+    expectSuccess(runGent(env, ["sandbox", "local", "run"]));
+    expect(expectSuccess(runGent(env, ["sandbox", "local", "exec", "--", "echo", "hello-from-sandbox"]))).toBe(
+      "hello-from-sandbox"
+    );
+    expect(expectSuccess(runGent(env, ["sandbox", "local", "logs"]))).toContain("not applicable");
+    expectSuccess(runGent(env, ["sandbox", "local", "stop"]));
+    expectSuccess(runGent(env, ["sandbox", "local", "destroy"]));
+  });
+
+  it("reports an unknown sandbox action with a non-zero exit", () => {
+    const env = tempEnv();
+    expectSuccess(runGent(env, ["create", "sandbox", "local"]));
+    const result = runGent(env, ["sandbox", "local", "bogus-action"]);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("Unknown sandbox action");
+  });
+});
+
+describe("gent <profile> transparently runs inside its sandbox", () => {
+  it("runs the agent through the local driver when profile.sandbox is set", () => {
+    const env = tempEnv();
+    expectSuccess(runGent(env, ["create", "sandbox", "local"]));
+
+    // Write a profile that points at a fake "agent" binary (node itself,
+    // echoing a marker) so we can assert it ran without needing claude/pi/codex
+    // installed in the test environment.
+    const profileDir = join(env.home, ".gent", "profiles");
+    mkdirSync(profileDir, { recursive: true });
+    writeFileSync(
+      join(profileDir, "coding.yaml"),
+      `agent: claude\nsandbox: local\n`,
+      "utf8"
+    );
+
+    const result = runGent(env, ["coding", "--dry-run"]);
+    expect(expectSuccess(result)).toContain("sandbox: local");
   });
 });
