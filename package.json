@@ -23,6 +23,7 @@
     "build": "tsup && pnpm --filter gent-ui build",
     "build:cli": "tsup",
     "build:extension": "pnpm --filter gent-ui build",
+    "build:containers": "pnpm --filter @gent/containers build",
     "global": "pnpm build && npm link",
     "dev": "tsx src/cli.ts",
     "test": "vitest run",

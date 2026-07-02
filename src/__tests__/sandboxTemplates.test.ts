@@ -19,9 +19,10 @@ describe("sandbox templates", () => {
     expect(t.lifecycle).toBe("ephemeral");
   });
 
-  it("apple-container template has driver apple-container, none network, ephemeral lifecycle", () => {
+  it("apple-container template has driver apple-container, gent-claude image, none network, ephemeral lifecycle", () => {
     const t = getTemplate("apple-container");
     expect(t.driver).toBe("apple-container");
+    expect(t.image).toBe("gent-claude");
     expect(t.network).toBe("none");
     expect(t.lifecycle).toBe("ephemeral");
   });

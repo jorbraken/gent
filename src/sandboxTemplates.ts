@@ -14,7 +14,7 @@ const TEMPLATES: Record<string, () => Sandbox> = {
     id: "apple-container",
     name: "Secure Agent (Apple Container)",
     driver: "apple-container",
-    image: "",
+    image: "gent-claude",
     workdir: "/workspace",
     lifecycle: "ephemeral",
     network: "none",
