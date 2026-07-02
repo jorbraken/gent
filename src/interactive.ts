@@ -3,6 +3,14 @@ import chalk from "chalk";
 import { listProfiles, mergeProfiles, type Profile } from "./profiles.js";
 import { listSkills, displayGentDir } from "./config.js";
 import { AGENT_NAMES, getAdapter, type AgentName } from "./agents.js";
+import {
+  type Sandbox,
+  type SandboxMount,
+  type SandboxDriverName,
+  type SandboxLifecycle,
+  type MountMode,
+  type NetworkMode,
+} from "./sandboxes.js";
 
 async function pickAgent(current: AgentName): Promise<AgentName> {
   return select<AgentName>({
@@ -438,4 +446,140 @@ export async function profileWizard(
   };
 
   return profile;
+}
+
+export async function sandboxWizard(): Promise<Sandbox> {
+  const { DRIVER_NAMES } = await import("./sandboxDrivers.js");
+  const id = await input({ message: "Sandbox id (e.g. dev):" });
+  const driver = await select<SandboxDriverName>({
+    message: "Driver:",
+    choices: DRIVER_NAMES.map((d) => ({ name: d, value: d })),
+  });
+
+  const image =
+    driver === "apple-container"
+      ? await input({ message: "Image (e.g. ghcr.io/org/gent-agent:latest):" })
+      : undefined;
+
+  const workdir = await input({ message: "Workdir:", default: "/workspace" });
+
+  const lifecycle = await select<SandboxLifecycle>({
+    message: "Lifecycle:",
+    choices: [
+      { name: "ephemeral — fresh sandbox every run, destroyed after", value: "ephemeral" },
+      { name: "persistent — reused across runs, stopped/destroyed explicitly", value: "persistent" },
+    ],
+    default: "ephemeral",
+  });
+
+  const network = await select<NetworkMode>({
+    message: "Network:",
+    choices: [
+      { name: "full — normal network access", value: "full" },
+      { name: "none — no network access", value: "none" },
+    ],
+    default: "full",
+  });
+
+  const mounts: SandboxMount[] = [];
+  let addMount = await confirm({ message: "Add a mount?", default: driver === "apple-container" });
+  while (addMount) {
+    const source = await input({ message: "  Mount source (host path):" });
+    const target = await input({ message: "  Mount target (in-sandbox path):" });
+    const mode = await select<MountMode>({
+      message: "  Mount mode:",
+      choices: [
+        { name: "rw — read/write", value: "rw" },
+        { name: "ro — read-only", value: "ro" },
+      ],
+      default: "rw",
+    });
+    mounts.push({ source, target, mode });
+    addMount = await confirm({ message: "Add another mount?", default: false });
+  }
+
+  return {
+    id,
+    driver,
+    ...(image ? { image } : {}),
+    workdir,
+    lifecycle,
+    network,
+    ...(mounts.length ? { mounts } : {}),
+  };
+}
+
+export async function editSandboxWizard(id: string): Promise<void> {
+  const { saveSandbox, loadSandbox, sandboxPath } = await import("./sandboxes.js");
+  const { DRIVER_NAMES } = await import("./sandboxDrivers.js");
+
+  const existing = loadSandbox(id);
+
+  const newId = await input({ message: "Sandbox id:", default: existing.id });
+  const driver = await select<SandboxDriverName>({
+    message: "Driver:",
+    choices: DRIVER_NAMES.map((d) => ({ name: d, value: d })),
+    default: existing.driver,
+  });
+
+  const image =
+    driver === "apple-container"
+      ? await input({ message: "Image:", default: existing.image ?? "" })
+      : undefined;
+
+  const workdir = await input({ message: "Workdir:", default: existing.workdir ?? "/workspace" });
+
+  const lifecycle = await select<SandboxLifecycle>({
+    message: "Lifecycle:",
+    choices: [
+      { name: "ephemeral — fresh sandbox every run, destroyed after", value: "ephemeral" },
+      { name: "persistent — reused across runs, stopped/destroyed explicitly", value: "persistent" },
+    ],
+    default: existing.lifecycle ?? "ephemeral",
+  });
+
+  const network = await select<NetworkMode>({
+    message: "Network:",
+    choices: [
+      { name: "full — normal network access", value: "full" },
+      { name: "none — no network access", value: "none" },
+    ],
+    default: existing.network ?? "full",
+  });
+
+  const mounts: SandboxMount[] = [...(existing.mounts ?? [])];
+  let addMount = await confirm({ message: `Add a mount? (${mounts.length} existing)`, default: false });
+  while (addMount) {
+    const source = await input({ message: "  Mount source (host path):" });
+    const target = await input({ message: "  Mount target (in-sandbox path):" });
+    const mode = await select<MountMode>({
+      message: "  Mount mode:",
+      choices: [
+        { name: "rw — read/write", value: "rw" },
+        { name: "ro — read-only", value: "ro" },
+      ],
+      default: "rw",
+    });
+    mounts.push({ source, target, mode });
+    addMount = await confirm({ message: "Add another mount?", default: false });
+  }
+
+  const updated: Sandbox = {
+    ...existing,
+    id: newId,
+    driver,
+    ...(image ? { image } : { image: undefined }),
+    workdir,
+    lifecycle,
+    network,
+    ...(mounts.length ? { mounts } : { mounts: undefined }),
+  };
+
+  if (newId !== id) {
+    const { unlinkSync } = await import("fs");
+    unlinkSync(sandboxPath(id));
+  }
+
+  saveSandbox(updated);
+  console.log(chalk.green(`Sandbox "${newId}" updated.`));
 }
