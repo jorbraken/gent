@@ -26,7 +26,14 @@
       { "command": "gent.openEntity", "title": "Gent: Open Entity" },
       { "command": "gent.createEntity", "title": "Gent: Create Entity" },
       { "command": "gent.deleteEntity", "title": "Gent: Delete Entity" },
-      { "command": "gent.revealSource", "title": "Gent: Reveal Source" }
+      { "command": "gent.revealSource", "title": "Gent: Reveal Source" },
+      { "command": "gent.inspectProfile", "title": "Gent: Inspect Profile" },
+      { "command": "gent.previewProfile", "title": "Gent: Preview Profile" },
+      { "command": "gent.sandbox.validate", "title": "Gent: Sandbox Validate" },
+      { "command": "gent.sandbox.run", "title": "Gent: Sandbox Run" },
+      { "command": "gent.sandbox.logs", "title": "Gent: Sandbox Logs" },
+      { "command": "gent.sandbox.stop", "title": "Gent: Sandbox Stop" },
+      { "command": "gent.sandbox.destroy", "title": "Gent: Sandbox Destroy" }
     ]
   },
   "scripts": {
