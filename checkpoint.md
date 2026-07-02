@@ -1,0 +1,18 @@
+- Clone the repo and run the scripts to build both the cli and VS Code extension
+- Run the install script
+    - Install script should:
+        - Migrate all skills, and mcps from ~/.claude, ~/.cursor, ~/.codex, ~/.pi, ~/<others>… into ~/.gent
+        - If there’s a way to programmatically install the resulted vsix extension using the `code` CLI then use that to install it other wise the path to the vsix for the user to install it manually
+- When the extension is first opened the user should see a walk through of how to set up the current folder as a project (gent init) and how to set up their first profile and sandbox
+- The extension should have pages/views for all the project objects, and others: 
+    - Projects, tasks, bugs (all with their comments), memories, changelog(s)
+    - Profiles
+        - mimic the cli options for creating profiles but in a visual form
+        - Should also show the final command that will be used to start the chosen coding agent (read-only with a copy icon)
+        - Sandbox selection
+    - Sandboxes (under construction) but will be where users could set up volume mounts and different things for a sandboxed VM/Container to be used with the current project. 
+- User should also be able to select to read from `~/.gent` and `./.gent`
+- (Stretch) button in the profile view that starts a vscode terminal with the selected profile or the command pasted on to a new vs code terminal for the user to run
+
+- After at least a profile and sandbox have been setup the command should result in a preconfigured Apple container running the specified coding agent and on a mounted path to a worktree of the project being worked on… 
+- Any actions and important decisions made by the agent during any sessions on the project are recorded to the project.db memories and synced to the md 

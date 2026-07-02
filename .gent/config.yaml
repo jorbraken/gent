@@ -1,1 +1,2 @@
+extends: ~/.gent/config.yaml
 mcp_servers: {}
