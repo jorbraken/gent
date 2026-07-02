@@ -1,4 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { spawnSync } from "child_process";
+import fs from "fs";
+import os from "os";
+import path from "path";
+import { fileURLToPath } from "url";
 import { buildMcpConfig, buildSettings } from "../runner.js";
 import type { McpServerConfig } from "../config.js";
 import type { Profile } from "../profiles.js";
@@ -152,5 +157,65 @@ describe("runInSandbox", () => {
     const sandbox: Sandbox = { id: "dev", driver: "local" };
     const code = await runInSandbox(driver, sandbox, "claude", [], "/tmp/runs/dev");
     expect(code).toBe(7);
+  });
+});
+
+// ─── run() ephemeral sandbox cleanup vs. process.exit ───────────────────────
+//
+// Regression test for the bug where `process.exit(code)` sat inside the
+// `try` of a try/finally: a real process.exit() terminates the process
+// immediately without running an enclosing finally still on the stack, so
+// the ephemeral runs-dir cleanup (fs.rmSync) never happened. Mocking
+// process.exit in-process can't distinguish the buggy code from the fix
+// (any mock that doesn't actually terminate the process restores normal
+// finally-on-unwind semantics for both), so this drives run()'s real
+// sandbox-dispatch branch — including its real process.exit call — in a
+// throwaway child process, then asserts the runs dir is gone afterward.
+describe("run() sandbox dispatch (child-process integration)", () => {
+  it("removes the ephemeral sandbox runs dir even though process.exit is called", () => {
+    const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gent-run-test-"));
+    const sandboxesDir = path.join(projectRoot, ".gent", "sandboxes");
+    fs.mkdirSync(sandboxesDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(sandboxesDir, "ephemeral-test-sandbox.yaml"),
+      "driver: local\nlifecycle: ephemeral\n",
+      "utf8"
+    );
+
+    const fixture = path.join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "fixtures",
+      "run-ephemeral-sandbox.ts"
+    );
+
+    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+
+    const result = spawnSync(
+      process.execPath,
+      ["--import", "tsx", fixture],
+      {
+        // cwd stays at the repo root so Node can resolve the `tsx` loader
+        // from its node_modules; GENT_PROJECT (not cwd) is what redirects
+        // gent's own .gent lookup to the throwaway project dir. PATH is
+        // stubbed out so adapter.binary ("claude") reliably resolves to
+        // ENOENT inside the sandbox's local driver instead of invoking a
+        // real, possibly-installed `claude` CLI.
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          NODE_ENV: "test",
+          GENT_PROJECT: projectRoot,
+          PATH: "/nonexistent",
+        },
+        encoding: "utf8",
+      }
+    );
+
+    expect(result.status).toBe(0);
+
+    const runsDir = path.join(projectRoot, ".gent", "runs", "ephemeral-test-sandbox");
+    expect(fs.existsSync(runsDir)).toBe(false);
+
+    fs.rmSync(projectRoot, { recursive: true, force: true });
   });
 });

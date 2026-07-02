@@ -56,15 +56,16 @@ export async function run(
     const sandbox = loadSandbox(profile.sandbox);
     const driver = getDriver(sandbox.driver);
     const tmpDir = ensureSandboxRunsDir(sandbox.id);
+    let code: number;
     try {
       const args = adapter.buildArgs(profile, globalConfig, tmpDir);
-      const code = await runInSandbox(driver, sandbox, adapter.binary, [...args, ...extraArgs], tmpDir);
-      process.exit(code);
+      code = await runInSandbox(driver, sandbox, adapter.binary, [...args, ...extraArgs], tmpDir);
     } finally {
       if ((sandbox.lifecycle ?? "ephemeral") === "ephemeral") {
         fs.rmSync(tmpDir, { recursive: true, force: true });
       }
     }
+    process.exit(code);
   }
 
   // Write sensitive args to temp files (mode 0o600) so they aren't visible in `ps`.
