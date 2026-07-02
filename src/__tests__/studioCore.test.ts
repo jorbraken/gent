@@ -92,3 +92,46 @@ describe("studio entity templates", () => {
     expect(profile).toContain("sandbox: local");
   });
 });
+
+describe("studio CRUD and validation", () => {
+  it("creates, reads, updates, and deletes a sandbox file", async () => {
+    const { createEntity, readEntity, updateEntity, deleteEntity } = await freshStudio();
+    const created = createEntity({ kind: "sandbox", id: "secure", variant: "apple-container" });
+    expect(created).toMatchObject({ kind: "sandbox", id: "secure", readonly: false });
+
+    const loaded = readEntity(created);
+    expect(loaded.content).toContain("driver: apple-container");
+
+    const updated = updateEntity(created, loaded.content.replace("network: none", "network: full"));
+    expect(updated.content).toContain("network: full");
+
+    deleteEntity(created);
+    expect(fs.existsSync(created.path!)).toBe(false);
+  });
+
+  it("reports a diagnostic when a profile references a missing sandbox", async () => {
+    const { createEntity, validateStudioWorkspace } = await freshStudio();
+    createEntity({ kind: "profile", id: "coder", variant: "local" });
+    const diagnostics = validateStudioWorkspace();
+    expect(diagnostics).toContainEqual(expect.objectContaining({
+      code: "profile.sandbox.missing",
+      severity: "error",
+      message: expect.stringContaining("local"),
+    }));
+  });
+
+  it("allows a profile sandbox reference when the sandbox exists", async () => {
+    const { createEntity, validateStudioWorkspace } = await freshStudio();
+    createEntity({ kind: "sandbox", id: "local", variant: "local" });
+    createEntity({ kind: "profile", id: "coder", variant: "local" });
+    expect(validateStudioWorkspace().filter((d) => d.code === "profile.sandbox.missing")).toEqual([]);
+  });
+
+  it("marks invalid custom yaml as unsafe for visual save", async () => {
+    const { createEntity, readEntity, updateEntity, assessRoundTripSafety } = await freshStudio();
+    const ref = createEntity({ kind: "sandbox", id: "broken", variant: "local" });
+    const loaded = updateEntity(ref, "driver: [unterminated\n", { allowInvalid: true });
+    expect(readEntity(ref).content).toContain("unterminated");
+    expect(assessRoundTripSafety(loaded)).toMatchObject({ safe: false, reason: "parse-error" });
+  });
+});
