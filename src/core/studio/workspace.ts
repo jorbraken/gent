@@ -11,7 +11,7 @@ export interface StudioWorkspaceSnapshot {
 }
 
 function emptyEntities(): Record<GentEntityKind, GentEntityRef[]> {
-  return Object.fromEntries(ENTITY_KINDS.map((kind) => [kind, []])) as Record<GentEntityKind, GentEntityRef[]>;
+  return Object.fromEntries(ENTITY_KINDS.map((kind) => [kind, []])) as unknown as Record<GentEntityKind, GentEntityRef[]>;
 }
 
 function listDirectoryEntities(kind: GentEntityKind, gentDir: string): GentEntityRef[] {
