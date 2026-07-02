@@ -22,7 +22,8 @@
       ]
     },
     "commands": [
-      { "command": "gent.refresh", "title": "Gent: Refresh" }
+      { "command": "gent.refresh", "title": "Gent: Refresh" },
+      { "command": "gent.openEntity", "title": "Gent: Open Entity" }
     ]
   },
   "scripts": {
