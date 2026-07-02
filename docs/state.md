@@ -15,6 +15,14 @@ delete mcp`).
   config.
 - `.gent/profiles/<name>.yaml` — one file per profile.
 - `.gent/skills/` — skill directories referenced by profiles.
+- `.gent/sandboxes/<id>.yaml` — one file per sandbox definition (`gent create
+  sandbox`, `gent show sandbox`, `gent update sandbox`, `gent delete
+  sandbox`). Resolved the same way as profiles.
+- `.gent/runs/<sandbox-id>/` — per-sandbox scratch dir holding the current
+  run's MCP config, settings, system-prompt, and aggregated skills plugin,
+  bind-mounted into isolated drivers at the same host path. Cleaned up after
+  each run for ephemeral sandboxes; left in place for persistent ones so the
+  running container keeps seeing fresh content.
 - Resolution walks up from `cwd` to find the nearest `.gent/`, falling back
   to `~/.gent`. A project-local `.gent/` can `extends`/`extend_global` to
   inherit from `~/.gent` or another project-local `.gent` dir.

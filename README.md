@@ -222,6 +222,58 @@ Each entry under `skills:` references a directory inside `<gent-dir>/skills/`. `
 - A directory that ships its own `.claude-plugin/plugin.json` is a **real plugin** — passed straight through as `--plugin-dir` so claude loads its skills, commands, agents, and hooks itself.
 - Anything else is a **loose skill source**. `gent` recursively finds every `SKILL.md` beneath the referenced directory — at any depth — and symlinks each skill into a single temporary plugin (with a generated manifest) under a flat `skills/`, then loads that. This means a single skill (`<name>/SKILL.md`), a flat collection (`<name>/skills/<skill>/SKILL.md`), and a categorized collection (`<name>/skills/<category>/<skill>/SKILL.md`, e.g. [mattpocock-skills](https://github.com/mattpocock/skills)) all work. Duplicate skill names across sources are skipped with a warning.
 
+### Sandboxes
+
+A sandbox defines *where* an agent runs — a profile defines *what it knows*. Attach one to a profile with `sandbox: <id>` and `gent <profile>` will transparently ensure it's running and execute the agent inside it instead of spawning locally:
+
+```yaml
+# ~/.gent/profiles/coding.yaml
+sandbox: dev
+```
+
+```bash
+gent create sandbox dev              # interactive wizard
+gent create sandbox local            # from the "local" template (no isolation)
+gent create sandbox apple-container  # from the "apple-container" template (Secure Agent preset)
+
+gent list sandbox
+gent show sandbox dev
+gent update sandbox dev
+gent delete sandbox dev              # removes the definition only, not a running instance
+
+gent sandbox dev validate            # checks mounts, runtime availability, image existence
+gent sandbox dev run                 # ensures it's running (mostly useful for persistent sandboxes)
+gent sandbox dev exec -- codex       # run a command inside it directly
+gent sandbox dev logs
+gent sandbox dev stop
+gent sandbox dev destroy
+```
+
+Two drivers are supported in this release:
+
+- **`local`** — no isolation; runs the agent directly on the host. `workdir` becomes the working directory, `environment` is layered on top of the host's own env.
+- **`apple-container`** — wraps [Apple's `container` runtime](https://github.com/apple/container) for per-container microVM isolation on Apple Silicon. Requires `image` to be set to an image containing the target agent binary.
+
+Sandbox definition (`.gent/sandboxes/<id>.yaml`):
+
+```yaml
+driver: apple-container       # local | apple-container
+image: ghcr.io/org/gent-agent:latest   # required for apple-container
+workdir: /workspace
+lifecycle: ephemeral          # ephemeral (default, destroyed after each run) | persistent (reused across runs)
+mounts:
+  - source: ~/Projects/app
+    target: /workspace
+    mode: rw                 # ro | rw
+environment:
+  GENT_PROFILE: coding
+network: none                 # none | full (default: full)
+```
+
+Pass `--no-sandbox` on the bare launch command to force a local run even when the profile specifies a sandbox: `gent coding --no-sandbox`.
+
+Docker and Podman drivers, along with an extension UI, are planned for a future release.
+
 ### Security
 
 `gent` never passes MCP config, settings, or the system-prompt append as inline command-line arguments — those would be visible to any user via `ps`. Instead it writes them to temp files with mode `0600` and passes the file paths (for claude: `--mcp-config`, `--settings`, `--append-system-prompt-file`; for pi: `--append-system-prompt` with a file path). For Codex, put sensitive MCP and instruction configuration in the Codex profile file selected by `--profile`. The temp directory is removed when the agent exits.
