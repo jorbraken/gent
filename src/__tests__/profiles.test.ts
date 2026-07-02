@@ -151,6 +151,20 @@ describe("mergeProfiles", () => {
     const b = { name: "qa" };
     expect(mergeProfiles([a, b]).agent).toBe("pi");
   });
+
+  it("takes sandbox from the last profile that defines it", async () => {
+    const { mergeProfiles } = await fresh();
+    const a = { name: "dev", sandbox: "dev-box" };
+    const b = { name: "qa", sandbox: "qa-box" };
+    expect(mergeProfiles([a, b]).sandbox).toBe("qa-box");
+  });
+
+  it("inherits sandbox from an earlier profile when later omits it", async () => {
+    const { mergeProfiles } = await fresh();
+    const a = { name: "dev", sandbox: "dev-box" };
+    const b = { name: "qa" };
+    expect(mergeProfiles([a, b]).sandbox).toBe("dev-box");
+  });
 });
 
 // ─── loadProfile ─────────────────────────────────────────────────────────────

@@ -51,6 +51,14 @@ export const localDriver: SandboxDriver = {
   async exec(sandbox, command, args) {
     const { cwd, env } = buildLocalExecOptions(sandbox);
     const result = spawnSync(command, args, { cwd, env, stdio: "inherit" });
+    if (result.error) {
+      if ((result.error as NodeJS.ErrnoException).code === "ENOENT") {
+        console.error(chalk.red(`${command} is not installed or not in PATH.`));
+      } else {
+        console.error(chalk.red(`Failed to launch ${command}: ${result.error.message}`));
+      }
+      return 1;
+    }
     return result.status ?? 0;
   },
   async stop() {
@@ -103,6 +111,13 @@ function buildEnvFlags(sandbox: Sandbox): string[] {
   return flags;
 }
 
+function buildNetworkFlags(sandbox: Sandbox): string[] {
+  if (sandbox.network === "none") {
+    return ["--network", "none"];
+  }
+  return [];
+}
+
 export function buildStartArgs(sandbox: Sandbox): string[] {
   return ["start", containerName(sandbox)];
 }
@@ -114,6 +129,7 @@ export function buildDetachedRunArgs(sandbox: Sandbox, tmpDir: string): string[]
     ...buildMountFlags(sandbox, tmpDir),
     "-w", sandbox.workdir ?? "/workspace",
     ...buildEnvFlags(sandbox),
+    ...buildNetworkFlags(sandbox),
     image,
     "sleep", "infinity",
   ];
@@ -131,6 +147,7 @@ export function buildEphemeralRunArgs(
     ...buildMountFlags(sandbox, tmpDir),
     "-w", sandbox.workdir ?? "/workspace",
     ...buildEnvFlags(sandbox),
+    ...buildNetworkFlags(sandbox),
     image,
     command,
     ...args,

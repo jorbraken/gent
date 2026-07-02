@@ -78,6 +78,14 @@ describe("localDriver", () => {
     expect(code).toBe(3);
   });
 
+  it("exec() reports a non-zero code instead of silently succeeding when the command can't be spawned", async () => {
+    const sandbox: Sandbox = { id: "dev", driver: "local" };
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const code = await localDriver.exec(sandbox, "definitely-not-a-real-binary-xyz", [], "/tmp");
+    expect(code).not.toBe(0);
+    errorSpy.mockRestore();
+  });
+
   it("ensureRunning/stop/destroy are no-ops that resolve", async () => {
     const sandbox: Sandbox = { id: "dev", driver: "local" };
     await expect(localDriver.ensureRunning(sandbox, "/tmp")).resolves.toBeUndefined();
@@ -128,6 +136,22 @@ describe("apple-container arg builders", () => {
     expect(() => buildDetachedRunArgs(sandbox, "/gent/runs/secure")).toThrow(/no image configured/);
   });
 
+  it("buildDetachedRunArgs adds --network none when sandbox.network is 'none'", () => {
+    const sandbox: Sandbox = { ...acSandbox, network: "none" };
+    const args = buildDetachedRunArgs(sandbox, "/gent/runs/secure");
+    expect(args).toEqual([
+      "run", "--detach", "--name", "gent-secure",
+      "-v", "/host/project:/workspace",
+      "-v", "/host/context:/gent/context:ro",
+      "-v", "/gent/runs/secure:/gent/runs/secure:ro",
+      "-w", "/workspace",
+      "-e", "GENT_PROFILE=coding",
+      "--network", "none",
+      "ghcr.io/org/gent-agent:latest",
+      "sleep", "infinity",
+    ]);
+  });
+
   it("buildEphemeralRunArgs includes --rm and the command/args to run", () => {
     const args = buildEphemeralRunArgs(acSandbox, "claude", ["--dangerously-skip-permissions"], "/gent/runs/secure");
     expect(args).toEqual([
@@ -137,6 +161,22 @@ describe("apple-container arg builders", () => {
       "-v", "/gent/runs/secure:/gent/runs/secure:ro",
       "-w", "/workspace",
       "-e", "GENT_PROFILE=coding",
+      "ghcr.io/org/gent-agent:latest",
+      "claude", "--dangerously-skip-permissions",
+    ]);
+  });
+
+  it("buildEphemeralRunArgs adds --network none when sandbox.network is 'none'", () => {
+    const sandbox: Sandbox = { ...acSandbox, network: "none" };
+    const args = buildEphemeralRunArgs(sandbox, "claude", ["--dangerously-skip-permissions"], "/gent/runs/secure");
+    expect(args).toEqual([
+      "run", "--rm",
+      "-v", "/host/project:/workspace",
+      "-v", "/host/context:/gent/context:ro",
+      "-v", "/gent/runs/secure:/gent/runs/secure:ro",
+      "-w", "/workspace",
+      "-e", "GENT_PROFILE=coding",
+      "--network", "none",
       "ghcr.io/org/gent-agent:latest",
       "claude", "--dangerously-skip-permissions",
     ]);

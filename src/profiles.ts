@@ -66,6 +66,7 @@ export function mergeProfiles(profiles: Profile[]): Profile {
     return {
       name: `${a.name}+${b.name}`,
       agent: b.agent ?? a.agent,
+      sandbox: b.sandbox ?? a.sandbox,
       description: [a.description, b.description].filter(Boolean).join(" + ") || undefined,
       mcp: [...new Set([...(a.mcp ?? []), ...(b.mcp ?? [])])],
       skills: [...new Set([...(a.skills ?? []), ...(b.skills ?? [])])],

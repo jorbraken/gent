@@ -211,7 +211,11 @@ describe("run() sandbox dispatch (child-process integration)", () => {
       }
     );
 
-    expect(result.status).toBe(0);
+    // PATH is stubbed out above so the sandboxed "claude" binary ENOENTs;
+    // the local driver now surfaces that as a non-zero exit code (see
+    // sandboxDrivers.ts's localDriver.exec spawn-failure handling) instead
+    // of silently reporting success, so this is 1, not 0.
+    expect(result.status).toBe(1);
 
     const runsDir = path.join(projectRoot, ".gent", "runs", "ephemeral-test-sandbox");
     expect(fs.existsSync(runsDir)).toBe(false);
