@@ -63,3 +63,160 @@ export const localDriver: SandboxDriver = {
     console.log(chalk.yellow("Logs are not applicable to the local driver (no isolated process to capture)."));
   },
 };
+
+// ---------------------------------------------------------------------------
+// Apple Container driver — wraps Apple's `container` CLI
+// (github.com/apple/container). Docker-like syntax, per-container microVM
+// isolation. Container name is derived from the sandbox id to avoid
+// collisions with unrelated containers.
+// ---------------------------------------------------------------------------
+
+export function containerName(sandbox: Sandbox): string {
+  return `gent-${sandbox.id}`;
+}
+
+function requireImage(sandbox: Sandbox): string {
+  if (!sandbox.image) {
+    throw new Error(`Sandbox "${sandbox.id}" has driver "apple-container" but no image configured.`);
+  }
+  return sandbox.image;
+}
+
+function buildMountFlags(sandbox: Sandbox, tmpDir: string): string[] {
+  const flags: string[] = [];
+  for (const m of sandbox.mounts ?? []) {
+    const suffix = m.mode === "ro" ? ":ro" : "";
+    flags.push("-v", `${expandHome(m.source)}:${m.target}${suffix}`);
+  }
+  // Bind-mount the runner's artifact dir at the identical host path so the
+  // file paths already baked into buildArgs() (mcp.json, settings.json,
+  // prompt.txt, skills-plugin/) resolve unmodified inside the container.
+  flags.push("-v", `${tmpDir}:${tmpDir}:ro`);
+  return flags;
+}
+
+function buildEnvFlags(sandbox: Sandbox): string[] {
+  const flags: string[] = [];
+  for (const [key, value] of Object.entries(sandbox.environment ?? {})) {
+    flags.push("-e", `${key}=${value}`);
+  }
+  return flags;
+}
+
+export function buildStartArgs(sandbox: Sandbox): string[] {
+  return ["start", containerName(sandbox)];
+}
+
+export function buildDetachedRunArgs(sandbox: Sandbox, tmpDir: string): string[] {
+  const image = requireImage(sandbox);
+  return [
+    "run", "--detach", "--name", containerName(sandbox),
+    ...buildMountFlags(sandbox, tmpDir),
+    "-w", sandbox.workdir ?? "/workspace",
+    ...buildEnvFlags(sandbox),
+    image,
+    "sleep", "infinity",
+  ];
+}
+
+export function buildEphemeralRunArgs(
+  sandbox: Sandbox,
+  command: string,
+  args: string[],
+  tmpDir: string
+): string[] {
+  const image = requireImage(sandbox);
+  return [
+    "run", "--rm",
+    ...buildMountFlags(sandbox, tmpDir),
+    "-w", sandbox.workdir ?? "/workspace",
+    ...buildEnvFlags(sandbox),
+    image,
+    command,
+    ...args,
+  ];
+}
+
+export function buildExecArgs(sandbox: Sandbox, command: string, args: string[]): string[] {
+  return ["exec", containerName(sandbox), command, ...args];
+}
+
+export function buildStopArgs(sandbox: Sandbox): string[] {
+  return ["stop", containerName(sandbox)];
+}
+
+export function buildRemoveArgs(sandbox: Sandbox): string[] {
+  return ["rm", containerName(sandbox)];
+}
+
+export function buildLogsArgs(sandbox: Sandbox): string[] {
+  return ["logs", containerName(sandbox)];
+}
+
+export function buildImageInspectArgs(sandbox: Sandbox): string[] {
+  return ["images", "inspect", sandbox.image ?? ""];
+}
+
+function isContainerBinaryAvailable(): boolean {
+  const result = spawnSync("container", ["--version"]);
+  return !result.error;
+}
+
+function isPersistent(sandbox: Sandbox): boolean {
+  return sandbox.lifecycle === "persistent";
+}
+
+export const appleContainerDriver: SandboxDriver = {
+  name: "apple-container",
+  async validate(sandbox) {
+    const problems: string[] = [];
+    if (!isContainerBinaryAvailable()) {
+      problems.push(
+        "The `container` binary is not installed or not on PATH. Install it from: https://github.com/apple/container"
+      );
+    }
+    if (!sandbox.image) {
+      problems.push(`Sandbox "${sandbox.id}" has driver "apple-container" but no image configured.`);
+    } else if (isContainerBinaryAvailable()) {
+      const inspect = spawnSync("container", buildImageInspectArgs(sandbox));
+      if (inspect.status !== 0) {
+        problems.push(`Image "${sandbox.image}" not found locally. It will be pulled on first run.`);
+      }
+    }
+    for (const m of sandbox.mounts ?? []) {
+      if (!fs.existsSync(expandHome(m.source))) {
+        problems.push(`Mount source does not exist: ${m.source}`);
+      }
+    }
+    return problems;
+  },
+  async ensureRunning(sandbox, tmpDir) {
+    if (!isPersistent(sandbox)) return; // ephemeral: created at exec time
+    const start = spawnSync("container", buildStartArgs(sandbox), { stdio: "ignore" });
+    if (start.status !== 0) {
+      spawnSync("container", buildDetachedRunArgs(sandbox, tmpDir), { stdio: "inherit" });
+    }
+  },
+  async exec(sandbox, command, args, tmpDir) {
+    const result = isPersistent(sandbox)
+      ? spawnSync("container", buildExecArgs(sandbox, command, args), { stdio: "inherit" })
+      : spawnSync("container", buildEphemeralRunArgs(sandbox, command, args, tmpDir), { stdio: "inherit" });
+    return result.status ?? 0;
+  },
+  async stop(sandbox) {
+    if (!isPersistent(sandbox)) return; // already gone
+    spawnSync("container", buildStopArgs(sandbox), { stdio: "ignore" });
+  },
+  async destroy(sandbox) {
+    if (!isPersistent(sandbox)) return;
+    spawnSync("container", buildStopArgs(sandbox), { stdio: "ignore" });
+    spawnSync("container", buildRemoveArgs(sandbox), { stdio: "ignore" });
+  },
+  async logs(sandbox) {
+    if (!isPersistent(sandbox)) {
+      console.log(chalk.yellow("Logs are not applicable — the ephemeral container has already exited."));
+      return;
+    }
+    spawnSync("container", buildLogsArgs(sandbox), { stdio: "inherit" });
+  },
+};
