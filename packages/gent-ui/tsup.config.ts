@@ -8,4 +8,5 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   external: ["vscode", "better-sqlite3"],
+  noExternal: ["js-yaml"],
 });
