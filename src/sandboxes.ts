@@ -8,6 +8,7 @@ import {
   resolveSandboxPath,
   ensureGentDir,
 } from "./config.js";
+import { sandboxSchema, formatZodError } from "./schemas.js";
 
 export type SandboxDriverName = "local" | "apple-container";
 export type SandboxLifecycle = "ephemeral" | "persistent";
@@ -33,6 +34,7 @@ export interface Sandbox {
 }
 
 const VALID_NAME = /^[a-zA-Z0-9_-]+$/;
+const sandboxCache = new Map<string, Sandbox>();
 
 export function validateSandboxName(id: string): void {
   if (!VALID_NAME.test(id)) {
@@ -61,14 +63,27 @@ export function loadSandbox(id: string): Sandbox {
       `Sandbox "${id}" not found in ${gentDirChain().join(", ")}`
     );
   }
-  const sandbox = yaml.load(fs.readFileSync(p, "utf8")) as Sandbox;
+  const cached = sandboxCache.get(p);
+  if (cached) return cached;
+  const parsed = sandboxSchema.safeParse(yaml.load(fs.readFileSync(p, "utf8")) ?? {});
+  if (!parsed.success) {
+    throw new Error(`Invalid sandbox at ${p}: ${formatZodError(parsed.error)}`);
+  }
+  const sandbox = parsed.data as Sandbox;
   sandbox.id = id; // filename is always authoritative
+  sandboxCache.set(p, sandbox);
   return sandbox;
 }
 
 export function saveSandbox(sandbox: Sandbox): void {
+  const parsed = sandboxSchema.safeParse(sandbox);
+  if (!parsed.success) {
+    throw new Error(`Invalid sandbox "${sandbox.id}": ${formatZodError(parsed.error)}`);
+  }
   ensureGentDir();
-  fs.writeFileSync(sandboxPath(sandbox.id), yaml.dump(sandbox), "utf8");
+  const p = sandboxPath(sandbox.id);
+  fs.writeFileSync(p, yaml.dump(sandbox), "utf8");
+  sandboxCache.delete(p);
 }
 
 export function listSandboxes(): Sandbox[] {

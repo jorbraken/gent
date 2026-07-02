@@ -9,6 +9,7 @@ import {
   ensureGentDir,
 } from "./config.js";
 import { type AgentName } from "./agents.js";
+import { profileSchema, formatZodError } from "./schemas.js";
 
 export interface ProfileSettings {
   model?: string;
@@ -31,6 +32,7 @@ export interface Profile {
 }
 
 const VALID_NAME = /^[a-zA-Z0-9_-]+$/;
+const profileCache = new Map<string, Profile>();
 
 export function validateProfileName(name: string): void {
   if (!VALID_NAME.test(name)) {
@@ -85,7 +87,13 @@ export function loadProfile(name: string, seen = new Set<string>()): Profile {
       `Profile "${name}" not found in ${gentDirChain().join(", ")}`
     );
   }
-  const profile = yaml.load(fs.readFileSync(p, "utf8")) as Profile;
+  const cached = profileCache.get(p);
+  if (cached) return cached;
+  const parsed = profileSchema.safeParse(yaml.load(fs.readFileSync(p, "utf8")) ?? {});
+  if (!parsed.success) {
+    throw new Error(`Invalid profile at ${p}: ${formatZodError(parsed.error)}`);
+  }
+  const profile = parsed.data as Profile;
   profile.name = name; // filename is always authoritative
 
   if (profile.extends) {
@@ -101,15 +109,24 @@ export function loadProfile(name: string, seen = new Set<string>()): Profile {
     const parents = parentNames.map((pName) => loadProfile(pName, nextSeen));
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { extends: _ext, ...child } = profile;
-    return mergeProfiles([...parents, { ...child, name }]);
+    const merged = mergeProfiles([...parents, { ...child, name }]);
+    profileCache.set(p, merged);
+    return merged;
   }
 
+  profileCache.set(p, profile);
   return profile;
 }
 
 export function saveProfile(profile: Profile): void {
+  const parsed = profileSchema.safeParse(profile);
+  if (!parsed.success) {
+    throw new Error(`Invalid profile "${profile.name}": ${formatZodError(parsed.error)}`);
+  }
   ensureGentDir();
-  fs.writeFileSync(profilePath(profile.name), yaml.dump(profile), "utf8");
+  const p = profilePath(profile.name);
+  fs.writeFileSync(p, yaml.dump(profile), "utf8");
+  profileCache.delete(p);
 }
 
 export function listProfiles(): Profile[] {

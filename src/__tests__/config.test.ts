@@ -88,6 +88,13 @@ describe("loadConfig", () => {
       command: "npx",
     });
   });
+
+  it("rejects invalid MCP server config", async () => {
+    const { loadConfig, GENT_DIR, CONFIG_PATH } = await freshConfig();
+    fs.mkdirSync(GENT_DIR, { recursive: true });
+    fs.writeFileSync(CONFIG_PATH, "mcp_servers:\n  github:\n    type: stdio\n", "utf8");
+    expect(() => loadConfig()).toThrow(/Invalid config.*command/);
+  });
 });
 
 // ─── listSkills ─────────────────────────────────────────────────────────────

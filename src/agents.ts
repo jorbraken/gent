@@ -96,12 +96,26 @@ interface DiscoveredSkill {
   dir: string; // absolute path to the skill directory
 }
 
+const SKILL_DISCOVERY_MAX_DEPTH = 8;
+const SKILL_DISCOVERY_IGNORED = new Set([".git", "node_modules", "dist", ".cache"]);
+const skillDiscoveryCache = new Map<string, DiscoveredSkill[]>();
+
 // Recursively collect skill directories (those with a SKILL.md) under `root`. A
 // directory with its own SKILL.md is a leaf skill — we don't descend into it.
 // This handles a single skill (root/SKILL.md), a flat collection
 // (root/skills/<skill>/SKILL.md), and categorized collections
 // (root/skills/<category>/<skill>/SKILL.md) alike. statSync follows symlinks.
-function collectSkillDirs(root: string, out: DiscoveredSkill[]): void {
+function collectSkillDirs(root: string, out: DiscoveredSkill[], depth = 0, seen = new Set<string>()): void {
+  if (depth > SKILL_DISCOVERY_MAX_DEPTH) return;
+  let realRoot: string;
+  try {
+    realRoot = fs.realpathSync(root);
+  } catch {
+    return;
+  }
+  if (seen.has(realRoot)) return;
+  seen.add(realRoot);
+
   if (fs.existsSync(path.join(root, "SKILL.md"))) {
     out.push({ name: path.basename(root), dir: root });
     return;
@@ -113,6 +127,7 @@ function collectSkillDirs(root: string, out: DiscoveredSkill[]): void {
     return;
   }
   for (const e of entries) {
+    if (SKILL_DISCOVERY_IGNORED.has(e.name)) continue;
     const p = path.join(root, e.name);
     let isDir = false;
     try {
@@ -120,8 +135,18 @@ function collectSkillDirs(root: string, out: DiscoveredSkill[]): void {
     } catch {
       isDir = false;
     }
-    if (isDir) collectSkillDirs(p, out);
+    if (isDir) collectSkillDirs(p, out, depth + 1, seen);
   }
+}
+
+function discoverSkillDirs(root: string): DiscoveredSkill[] {
+  const key = fs.existsSync(root) ? fs.realpathSync(root) : path.resolve(root);
+  const cached = skillDiscoveryCache.get(key);
+  if (cached) return cached;
+  const found: DiscoveredSkill[] = [];
+  collectSkillDirs(root, found);
+  skillDiscoveryCache.set(key, found);
+  return found;
 }
 
 // Split referenced skills into real plugins (shipping a .claude-plugin manifest,
@@ -143,8 +168,7 @@ function classifySkills(skills: string[]): {
       plugins.push(name);
       continue;
     }
-    const found: DiscoveredSkill[] = [];
-    collectSkillDirs(p, found);
+    const found = discoverSkillDirs(p);
     if (found.length === 0) {
       console.warn(
         chalk.yellow(`Warning: skill "${name}" — no SKILL.md found under ${p}`)
@@ -372,8 +396,7 @@ const piAdapter: AgentAdapter = {
     // concept, so flatten everything (plugins included) down to skill dirs.
     const { plugins, aggregated } = classifySkills(profile.skills ?? []);
     for (const name of plugins) {
-      const found: DiscoveredSkill[] = [];
-      collectSkillDirs(resolveSkillPath(name), found);
+      const found = discoverSkillDirs(resolveSkillPath(name));
       for (const s of found) args.push("--skill", s.dir);
     }
     for (const s of aggregated) {

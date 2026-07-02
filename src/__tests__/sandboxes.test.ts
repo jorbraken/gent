@@ -59,6 +59,13 @@ describe("loadSandbox", () => {
     expect(sandbox.driver).toBe("local");
     expect(sandbox.workdir).toBe("/workspace");
   });
+
+  it("rejects an invalid sandbox YAML shape", async () => {
+    const { loadSandbox, SANDBOXES_DIR } = await fresh();
+    fs.mkdirSync(SANDBOXES_DIR, { recursive: true });
+    fs.writeFileSync(path.join(SANDBOXES_DIR, "dev.yaml"), "driver: docker\n", "utf8");
+    expect(() => loadSandbox("dev")).toThrow(/Invalid sandbox.*driver/);
+  });
 });
 
 describe("saveSandbox → loadSandbox round-trip", () => {

@@ -188,6 +188,13 @@ describe("loadProfile", () => {
     expect(profile.mcp).toEqual(["github"]);
   });
 
+  it("rejects an invalid profile YAML shape", async () => {
+    const { loadProfile, PROFILES_DIR } = await fresh();
+    fs.mkdirSync(PROFILES_DIR, { recursive: true });
+    fs.writeFileSync(path.join(PROFILES_DIR, "dev.yaml"), "mcp: github\n", "utf8");
+    expect(() => loadProfile("dev")).toThrow(/Invalid profile.*mcp/);
+  });
+
   it("filename overrides the name field inside the YAML", async () => {
     const { loadProfile, PROFILES_DIR } = await fresh();
     fs.mkdirSync(PROFILES_DIR, { recursive: true });

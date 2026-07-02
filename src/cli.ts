@@ -51,6 +51,12 @@ import { registerUpdate } from "./commands/update.js";
 import { registerDelete } from "./commands/delete.js";
 import { registerDone } from "./commands/done.js";
 import { registerSandboxLifecycle } from "./commands/sandboxLifecycle.js";
+import {
+  ensureActiveGentDirTrusted,
+  listTrustedGentDirs,
+  trustGentDir,
+  untrustGentDir,
+} from "./trust.js";
 
 const program = new Command();
 
@@ -110,6 +116,28 @@ program
 
     await run(profile, extraArgs, options.dryRun ?? false, options.sandbox === false);
   });
+
+const TRUST_EXEMPT_COMMANDS = new Set([
+  "gent init",
+  "gent trust",
+  "gent untrust",
+  "gent list trust",
+  "gent create scaffold",
+  "gent create project",
+]);
+
+program.hook("preAction", async (_thisCommand, actionCommand) => {
+  const parts: string[] = [];
+  let current: Command | null = actionCommand;
+  while (current) {
+    parts.unshift(current.name());
+    current = current.parent ?? null;
+  }
+  const commandPath = parts.join(" ");
+  if (!TRUST_EXEMPT_COMMANDS.has(commandPath)) {
+    await ensureActiveGentDirTrusted();
+  }
+});
 
 // gent init
 program
@@ -203,6 +231,36 @@ listCmd
       if (exists) printParentTree(dir, "", new Set([path.resolve(dir)]));
       console.log();
     }
+  });
+
+listCmd
+  .command("trust")
+  .description("List trusted project-local .gent folders")
+  .action(() => {
+    const trusted = listTrustedGentDirs();
+    if (trusted.length === 0) {
+      console.log(chalk.yellow("No trusted project-local .gent folders."));
+      return;
+    }
+    for (const dir of trusted) console.log(`  ${dir}`);
+  });
+
+program
+  .command("trust [dir]")
+  .description("Trust a project-local .gent folder")
+  .action((dir?: string) => {
+    const target = dir ? path.resolve(dir) : undefined;
+    const trusted = trustGentDir(target);
+    console.log(chalk.green(`Trusted ${trusted}`));
+  });
+
+program
+  .command("untrust [dir]")
+  .description("Remove trust for a project-local .gent folder")
+  .action((dir?: string) => {
+    const target = dir ? path.resolve(dir) : undefined;
+    const removed = untrustGentDir(target);
+    console.log(chalk.green(`Untrusted ${removed}`));
   });
 
 listCmd

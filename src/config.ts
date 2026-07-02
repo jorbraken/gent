@@ -3,6 +3,7 @@ import path from "path";
 import os from "os";
 import yaml from "js-yaml";
 import chalk from "chalk";
+import { gentConfigSchema, formatZodError } from "./schemas.js";
 
 // The shared, user-level gent dir (~/.gent). In tests GENT_HOME redirects it.
 function resolveGlobalDir(): string {
@@ -226,9 +227,19 @@ export function configExists(): boolean {
 }
 
 function readConfigFile(cfgPath: string): GentConfig | null {
+  const cached = configCache.get(cfgPath);
+  if (cached !== undefined) return cached;
   if (!fs.existsSync(cfgPath)) return null;
-  return (yaml.load(fs.readFileSync(cfgPath, "utf8")) as GentConfig) ?? null;
+  const raw = yaml.load(fs.readFileSync(cfgPath, "utf8"));
+  const result = gentConfigSchema.safeParse(raw ?? {});
+  if (!result.success) {
+    throw new Error(`Invalid config at ${cfgPath}: ${formatZodError(result.error)}`);
+  }
+  configCache.set(cfgPath, result.data);
+  return result.data;
 }
+
+const configCache = new Map<string, GentConfig>();
 
 // The project-local config only — the file that writes target. Use this when
 // adding/removing MCP servers so inherited (~/.gent) entries aren't copied in.
@@ -253,6 +264,7 @@ export function loadConfig(): GentConfig {
 export function saveConfig(config: GentConfig): void {
   ensureGentDir();
   fs.writeFileSync(CONFIG_PATH, yaml.dump(config), "utf8");
+  configCache.delete(CONFIG_PATH);
 }
 
 export function interpolateEnv(value: string): string {

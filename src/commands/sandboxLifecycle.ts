@@ -10,6 +10,13 @@ function isAction(value: string): value is Action {
   return (ACTIONS as readonly string[]).includes(value);
 }
 
+async function validateOrExit(driver: ReturnType<typeof getDriver>, sandbox: ReturnType<typeof loadSandbox>): Promise<void> {
+  const problems = await driver.validate(sandbox);
+  if (problems.length === 0) return;
+  for (const p of problems) console.error(chalk.red(`- ${p}`));
+  process.exit(1);
+}
+
 export function registerSandboxLifecycle(program: Command): void {
   program
     .command("sandbox <name> <action> [args...]")
@@ -39,6 +46,7 @@ export function registerSandboxLifecycle(program: Command): void {
         }
         case "run": {
           const tmpDir = ensureSandboxRunsDir(sandbox.id);
+          await validateOrExit(driver, sandbox);
           await driver.ensureRunning(sandbox, tmpDir);
           console.log(chalk.green(`Sandbox "${name}" is running.`));
           return;
@@ -49,6 +57,7 @@ export function registerSandboxLifecycle(program: Command): void {
             process.exit(1);
           }
           const tmpDir = ensureSandboxRunsDir(sandbox.id);
+          await validateOrExit(driver, sandbox);
           await driver.ensureRunning(sandbox, tmpDir);
           const [command, ...rest] = args;
           const code = await driver.exec(sandbox, command, rest, tmpDir);

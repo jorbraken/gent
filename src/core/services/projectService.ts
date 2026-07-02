@@ -5,6 +5,7 @@ import { openDatabase } from '../../db/connection.js';
 import { migrateProjectDb } from '../../db/migrations/project.js';
 import { ProjectMetaRepository } from '../../db/repositories/projectMetaRepository.js';
 import type { ProjectRegistryRepository } from '../../db/repositories/projectRegistryRepository.js';
+import { trustGentDir } from '../../trust.js';
 
 export class ProjectService {
   constructor(private readonly registry: ProjectRegistryRepository) {}
@@ -20,6 +21,7 @@ export class ProjectService {
     } finally {
       projectDb.close();
     }
+    trustGentDir(join(rootPath, '.gent'));
     return this.registry.create({ name, rootPath, dbPath });
   }
 }

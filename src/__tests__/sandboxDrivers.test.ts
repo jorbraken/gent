@@ -66,6 +66,26 @@ describe("localDriver", () => {
     expect(await localDriver.validate(sandbox)).toEqual([]);
   });
 
+  it("validate() rejects relative mount targets", async () => {
+    const sandbox: Sandbox = {
+      id: "dev",
+      driver: "local",
+      mounts: [{ source: process.cwd(), target: "workspace", mode: "ro" }],
+    };
+    const problems = await localDriver.validate(sandbox);
+    expect(problems.some((p) => p.includes("absolute container path"))).toBe(true);
+  });
+
+  it("validate() rejects rw mounts of broad host directories", async () => {
+    const sandbox: Sandbox = {
+      id: "dev",
+      driver: "local",
+      mounts: [{ source: "/", target: "/host", mode: "rw" }],
+    };
+    const problems = await localDriver.validate(sandbox);
+    expect(problems.some((p) => p.includes("Refusing rw mount"))).toBe(true);
+  });
+
   it("exec() runs the command and returns its exit code", async () => {
     const sandbox: Sandbox = { id: "dev", driver: "local" };
     const code = await localDriver.exec(sandbox, process.execPath, ["-e", "process.exit(0)"], "/tmp");

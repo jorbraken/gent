@@ -37,4 +37,33 @@ describe('migrations', () => {
     expect(tables.map((row) => row.name)).toEqual(['bugs', 'changelog', 'comments', 'memories', 'project_meta', 'schema_migrations', 'tasks']);
     db.close();
   });
+
+  it('creates project indexes and constraints', () => {
+    const db = openDatabase(tempDbPath('project.db'));
+    migrateProjectDb(db);
+
+    const indexes = db.prepare("select name from sqlite_master where type = 'index' and name not like 'sqlite_%' order by name").all() as Array<{ name: string }>;
+    expect(indexes.map((row) => row.name)).toEqual([
+      'idx_bugs_status_id',
+      'idx_comments_parent',
+      'idx_memories_kind_id',
+      'idx_tasks_status_id',
+    ]);
+    expect(() => db.prepare("insert into tasks (title, description, status, priority) values ('x', '', 'bad', 'normal')").run()).toThrow();
+    expect(() => db.prepare("insert into memories (title, body, kind) values ('x', '', 'bad')").run()).toThrow();
+    db.close();
+  });
+
+  it('runs project migrations idempotently', () => {
+    const db = openDatabase(tempDbPath('project.db'));
+    migrateProjectDb(db);
+    migrateProjectDb(db);
+
+    const rows = db.prepare('select id, name from schema_migrations order by id').all() as Array<{ id: number; name: string }>;
+    expect(rows).toEqual([
+      { id: 1, name: '001_project_schema' },
+      { id: 2, name: '002_constraints_and_indexes' },
+    ]);
+    db.close();
+  });
 });

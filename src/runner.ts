@@ -16,6 +16,52 @@ export {
   type McpConfigJson,
 } from "./agents.js";
 
+const SECRET_KEY = /(token|key|secret|password|auth|credential)/i;
+
+function redactValue(key: string, value: unknown): unknown {
+  if (SECRET_KEY.test(key)) return "<redacted>";
+  if (Array.isArray(value)) return value.map((item) => redactUnknown(item));
+  if (value && typeof value === "object") return redactObject(value as Record<string, unknown>);
+  return value;
+}
+
+function redactObject(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(value).map(([key, val]) => [key, redactValue(key, val)]));
+}
+
+function redactUnknown(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => redactUnknown(item));
+  if (value && typeof value === "object") return redactObject(value as Record<string, unknown>);
+  return value;
+}
+
+function redactJsonArg(raw: string): string {
+  try {
+    return JSON.stringify(redactUnknown(JSON.parse(raw)));
+  } catch {
+    return raw;
+  }
+}
+
+export function redactDryRunArgs(args: string[]): string[] {
+  const redacted: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    redacted.push(arg);
+    if ((arg === "--mcp-config" || arg === "--settings") && i + 1 < args.length) {
+      redacted.push(redactJsonArg(args[++i]));
+    }
+  }
+  return redacted;
+}
+
+async function assertSandboxValid(driver: SandboxDriver, sandbox: Sandbox): Promise<void> {
+  const problems = await driver.validate(sandbox);
+  if (problems.length > 0) {
+    throw new Error(`Invalid sandbox "${sandbox.id}": ${problems.join("; ")}`);
+  }
+}
+
 // Runs the agent binary+args through a sandbox driver instead of spawning
 // locally. Destroys the sandbox afterward when its lifecycle is ephemeral
 // (the default) so a persistent sandbox's container survives for reuse.
@@ -48,13 +94,14 @@ export async function run(
   if (dryRun) {
     const args = adapter.buildArgs(profile, globalConfig, null);
     const sandboxNote = profile.sandbox && !noSandbox ? chalk.gray(` (sandbox: ${profile.sandbox})`) : "";
-    console.log(chalk.cyan(adapter.binary) + " " + [...args, ...extraArgs].join(" ") + sandboxNote);
+    console.log(chalk.cyan(adapter.binary) + " " + redactDryRunArgs([...args, ...extraArgs]).join(" ") + sandboxNote);
     return;
   }
 
   if (profile.sandbox && !noSandbox) {
     const sandbox = loadSandbox(profile.sandbox);
     const driver = getDriver(sandbox.driver);
+    await assertSandboxValid(driver, sandbox);
     const tmpDir = ensureSandboxRunsDir(sandbox.id);
     let code: number;
     try {

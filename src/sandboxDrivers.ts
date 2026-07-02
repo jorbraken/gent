@@ -1,5 +1,7 @@
 import { spawnSync } from "child_process";
 import fs from "fs";
+import os from "os";
+import path from "path";
 import chalk from "chalk";
 import { expandHome } from "./profiles.js";
 import { type Sandbox, type SandboxDriverName } from "./sandboxes.js";
@@ -34,10 +36,36 @@ export function buildLocalExecOptions(sandbox: Sandbox): { cwd: string; env: Nod
   };
 }
 
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function isRootLevelOrHome(source: string): boolean {
+  const expanded = path.resolve(expandHome(source));
+  const parsed = path.parse(expanded);
+  const home = path.resolve(os.homedir());
+  return expanded === parsed.root || path.dirname(expanded) === parsed.root || expanded === home;
+}
+
+function commonSandboxProblems(sandbox: Sandbox): string[] {
+  const problems: string[] = [];
+  for (const [key, value] of Object.entries(sandbox.environment ?? {})) {
+    if (!ENV_NAME.test(key)) problems.push(`Invalid environment variable name: ${key}`);
+    if (typeof value !== "string") problems.push(`Environment value for ${key} must be a string`);
+  }
+  for (const m of sandbox.mounts ?? []) {
+    if (!path.isAbsolute(m.target)) {
+      problems.push(`Mount target must be an absolute container path: ${m.target}`);
+    }
+    if (m.mode === "rw" && isRootLevelOrHome(m.source)) {
+      problems.push(`Refusing rw mount of broad host directory: ${m.source}`);
+    }
+  }
+  return problems;
+}
+
 export const localDriver: SandboxDriver = {
   name: "local",
   async validate(sandbox) {
-    const problems: string[] = [];
+    const problems = commonSandboxProblems(sandbox);
     for (const m of sandbox.mounts ?? []) {
       if (!fs.existsSync(expandHome(m.source))) {
         problems.push(`Mount source does not exist: ${m.source}`);
@@ -174,9 +202,13 @@ export function buildImageInspectArgs(sandbox: Sandbox): string[] {
   return ["images", "inspect", sandbox.image ?? ""];
 }
 
+let containerBinaryAvailable: boolean | null = null;
+
 function isContainerBinaryAvailable(): boolean {
+  if (containerBinaryAvailable !== null) return containerBinaryAvailable;
   const result = spawnSync("container", ["--version"]);
-  return !result.error;
+  containerBinaryAvailable = !result.error;
+  return containerBinaryAvailable;
 }
 
 function isPersistent(sandbox: Sandbox): boolean {
@@ -186,7 +218,7 @@ function isPersistent(sandbox: Sandbox): boolean {
 export const appleContainerDriver: SandboxDriver = {
   name: "apple-container",
   async validate(sandbox) {
-    const problems: string[] = [];
+    const problems = commonSandboxProblems(sandbox);
     if (!isContainerBinaryAvailable()) {
       problems.push(
         "The `container` binary is not installed or not on PATH. Install it from: https://github.com/apple/container"

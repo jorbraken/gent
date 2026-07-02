@@ -4,7 +4,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
-import { buildMcpConfig, buildSettings } from "../runner.js";
+import { buildMcpConfig, buildSettings, redactDryRunArgs } from "../runner.js";
 import type { McpServerConfig } from "../config.js";
 import type { Profile } from "../profiles.js";
 
@@ -99,6 +99,28 @@ describe("buildSettings", () => {
     const result = buildSettings(profile);
     expect(result?.model).toBe("claude-sonnet-4-6");
     expect(result?.customKey).toBe("custom-value");
+  });
+});
+
+describe("redactDryRunArgs", () => {
+  it("redacts secrets from inline MCP JSON args", () => {
+    const args = redactDryRunArgs([
+      "--mcp-config",
+      JSON.stringify({
+        mcpServers: {
+          github: {
+            type: "stdio",
+            command: "npx",
+            env: { GITHUB_TOKEN: "tok-123", STATIC: "visible" },
+            headers: { Authorization: "Bearer secret" },
+          },
+        },
+      }),
+    ]);
+    expect(args[1]).toContain("<redacted>");
+    expect(args[1]).not.toContain("tok-123");
+    expect(args[1]).not.toContain("Bearer secret");
+    expect(args[1]).toContain("visible");
   });
 });
 
