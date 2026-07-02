@@ -1,0 +1,5 @@
+FROM gent-base
+
+RUN npm install -g @openai/codex
+
+WORKDIR /workspace

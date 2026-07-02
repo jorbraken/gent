@@ -1,0 +1,11 @@
+{
+  "name": "@gent/containers",
+  "private": true,
+  "scripts": {
+    "build:base": "container build -t gent-base -f base/Containerfile .",
+    "build:claude": "container build -t gent-claude -f claude/Containerfile .",
+    "build:pi": "container build -t gent-pi -f pi/Containerfile .",
+    "build:codex": "container build -t gent-codex -f codex/Containerfile .",
+    "build": "pnpm build:base && pnpm build:claude && pnpm build:pi && pnpm build:codex"
+  }
+}

@@ -287,6 +287,10 @@ network: none                 # none | full (default: full)
 
 Pass `--no-sandbox` on the bare launch command to force a local run even when the profile specifies a sandbox: `gent coding --no-sandbox`.
 
+#### Container images
+
+Pre-built agent runtime images live in [`packages/containers`](packages/containers). Build them locally with `pnpm build:containers` (requires Apple's `container` CLI on Apple Silicon). Tags: `gent-base`, `gent-claude`, `gent-pi`, `gent-codex`. See that directory's README for sandbox wiring examples.
+
 Docker and Podman drivers, along with an extension UI, are planned for a future release.
 
 ### Security

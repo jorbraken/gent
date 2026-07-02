@@ -27,7 +27,7 @@ export function templateForEntity(kind: GentEntityKind, id: string, variant = "d
         id,
         name: "Secure Agent",
         driver: "apple-container",
-        image: "",
+        image: "gent-claude",
         workdir: "/workspace",
         lifecycle: "ephemeral",
         mounts: [],
