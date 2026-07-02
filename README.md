@@ -24,6 +24,21 @@ pnpm run global   # builds and links the CLI globally (npm link)
 
 Requires Node.js ≥ 22 and at least one supported agent CLI (`claude`, `pi`, or `codex`) on your `PATH`.
 
+## Gent UI extension development
+
+Gent UI is the VS Code extension package in `packages/gent-ui`. It uses the shared TypeScript core under `src/core/studio` for entity discovery, templates, validation, serialization, and round-trip safety checks.
+
+Useful commands:
+
+```bash
+pnpm install
+pnpm build:extension
+pnpm test:extension
+pnpm typecheck
+```
+
+The extension works against readable `.gent/` files. Sandboxes are edited as `.gent/sandboxes/<id>.yaml`; v1 supports the `local` and `apple-container` drivers. Sandbox lifecycle actions shell out to the installed `gent` CLI.
+
 ## Quick start
 
 ```bash
